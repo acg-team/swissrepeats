@@ -1,3 +1,0 @@
-# Missing directory:
-results/swiss_prot_aa_frequencies/swissprot_disorder_kingdomwise/Eukaryota.csv
--> split manually the directory "/results/amino_acid_frequencies/summary.csv" into Eukaryota.csv, etc.

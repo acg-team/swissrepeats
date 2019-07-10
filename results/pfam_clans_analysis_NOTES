@@ -1,3 +1,0 @@
-  cannot open file '/home/matteo/polybox/MSc_ACLS/swissrepeat/results/tr_annotations/tr_all_with_disorder.csv': No such file or directory
-When I take the file "results/tr_idr_overlap/repeat_disorder_overlap_regions.csv" instead it seems to work. However, (1) the annotation of the protein witha  clan takes hours and (2) there is still the idr_perc missing.
-
