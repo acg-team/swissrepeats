@@ -1,0 +1,150 @@
+---
+title: "Swiss-Prot Tandem repeats annotated with disorder."
+date: "December 20, 2015"
+output: html_document
+---
+
+```{r, echo=FALSE}
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+```
+
+
+```{r, echo=FALSE, eval=TRUE}
+sp_path = "data/swissprot_annotations.tsv"
+sp_all = load_swissprot(sp_path)
+
+tr_path = "results/tr_annotations/tr_annotations.csv"
+tr_all = load_tr_annotations(tr_path)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+
+discoor_path = "results/disorder_annotations/mobidb_coordinates.csv"
+discoor_all = load_disorder_annotations(discoor_path)
+
+do_all_sp = merge(x = discoor_all, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+### Fraction of disordered chars vs tandem repeat unit length
+
+#### All tandem repeats
+```{r, echo=FALSE, eval=TRUE}
+# Warning! Slow plot~
+p = ggplot(tr_all_sp, aes(x=fraction_disordered_chars, y=l_effective)) + geom_point()
+p = p
+beautifier(p)
+```
+
+#### Tandem repeats split into repeat unit length types and Superkingdom 
+```{r, echo=FALSE, eval=TRUE}
+p = ggplot(tr_all_sp, aes(x=fraction_disordered_chars, colour=Superkingdom)) + geom_density()
+p = p + facet_wrap(~ l_type, scales = "free")
+beautifier(p)
+```
+
+#### Tandem repeats split into repeat unit length types and origin 
+```{r, echo=FALSE, eval=TRUE}
+p = ggplot(tr_all_sp, aes(x=fraction_disordered_chars, colour=origin)) + geom_density()
+p = p + facet_wrap(~ l_type, scales = "free")
+beautifier(p)
+```
+
+
+### Distributions of tandem repeats in disordered in ordered regions of the Swiss-Prot proteins
+
+```{r, echo=FALSE, eval=TRUE}
+chars_sp = ddply(sp_all, .(Superkingdom), summarize, n_chars=sum(Length))
+chars_disorder = ddply(do_all_sp, .(Superkingdom), summarize, n_disordered_chars=sum(end - start))
+chars = merge(x = chars_sp, y = chars_disorder, by = "Superkingdom", all.x = TRUE)
+chars$n_ordered_chars = chars$n_chars - chars$n_disordered_chars
+chars$f_disordered_chars = chars$n_disordered_chars / chars$n_chars
+chars
+
+# Classify tandem repeats as either is_in_IDR = False or is_in_IDR = True.
+tr_all_sp$is_in_IDR = ifelse(tr_all_sp$fraction_disordered_chars < 0.5, FALSE, TRUE)
+```
+
+#### Number of tandem repeats in ordered/disordered TRs
+```{r, echo=FALSE, eval=TRUE}
+tr_sum = ddply(tr_all_sp, .(Superkingdom, l_type, is_in_IDR), summarize, count=length(ID))
+tr_sum = merge(x = tr_sum, y = chars, by = "Superkingdom", all.x = TRUE)
+tr_sum$relative_count = ifelse(tr_sum$is_in_IDR, tr_sum$count * (1/tr_sum$f_disordered_chars - 1), tr_sum$count)
+tr_sum$n_chars = NULL
+tr_sum$n_disordered_chars = NULL
+tr_sum$n_ordered_chars = NULL
+tr_sum
+```
+
+#### Number of homorepeats in ordered/disordered TRs
+```{r, echo=FALSE, eval=TRUE}
+tr_tmp = subset(tr_all_sp, l_effective==1)
+tr_sum = ddply(tr_tmp, .(Superkingdom, is_in_IDR), summarize, count=length(ID))
+tr_sum = merge(x = tr_sum, y = chars, by = "Superkingdom", all.x = TRUE)
+tr_sum$relative_count = ifelse(tr_sum$is_in_IDR, tr_sum$count * (1/tr_sum$f_disordered_chars - 1), tr_sum$count)
+tr_sum$n_chars = NULL
+tr_sum$n_disordered_chars = NULL
+tr_sum$n_ordered_chars = NULL
+tr_sum
+```
+
+#### For statistical reasons (given a less uniform distribution of aa chars in IDRs than in the remainder of the protein sequence), assuming tandem repeats come up at random in the sequence, the overrepresentation of homorepeats in IDR would increase with $n_{effective}$ Let's test this:
+
+All $n_{effective}$:
+
+```{r, echo=FALSE, eval=TRUE}
+tr_tmp = subset(tr_all_sp, l_effective==1)
+tr_tmp$n_effective_rounded = round(tr_tmp$n_effective)
+tr_sum = ddply(tr_tmp, .(Superkingdom, is_in_IDR, n_effective_rounded), summarize, count=length(ID))
+tr_sum = merge(x = tr_sum, y = chars, by = "Superkingdom", all.x = TRUE)
+tr_sum_ordered = subset(tr_sum, is_in_IDR==FALSE)
+tr_sum_disordered = subset(tr_sum, is_in_IDR==TRUE)
+tr_sum_remerge = merge(x = tr_sum_ordered, y = tr_sum_disordered, by = c("Superkingdom", "n_effective_rounded"))
+tr_sum_remerge = merge(x = tr_sum_remerge, y = chars, by = "Superkingdom", all.x = TRUE)
+tr_sum_remerge$ordered_count = tr_sum_remerge$count.x
+tr_sum_remerge$disordered_count = tr_sum_remerge$count.y
+tr_sum_remerge$n_disordered_chars = tr_sum_remerge$n_disordered_chars.y
+tr_sum_remerge$n_ordered_chars = tr_sum_remerge$n_ordered_chars.y
+
+tr_sum_remerge$n_disordered_trs_relative_to_ordered_trs = tr_sum_remerge$disordered_count / tr_sum_remerge$ordered_count
+tr_sum_remerge$n_disordered_trs_relative_to_ordered_trs_normalised_by_relative_sequence_length = tr_sum_remerge$n_disordered_trs_relative_to_ordered_trs * (tr_sum_remerge$n_ordered_chars/tr_sum_remerge$n_disordered_chars)
+
+p = ggplot(tr_sum_remerge, aes(x=n_effective_rounded, y=n_disordered_trs_relative_to_ordered_trs_normalised_by_relative_sequence_length, colour=Superkingdom)) + geom_point()
+p = p + facet_wrap(~ Superkingdom, scales = "free")
+p = p + geom_abline(intercept=1, slope=0)
+beautifier(p)
+```
+
+Only $n_{effective} <= 25$
+
+```{r, echo=FALSE, eval=TRUE}
+
+# Same plot shown only for few repetitions:
+tr_sum_remerge_short = subset(tr_sum_remerge, n_effective_rounded <= 25)
+p = ggplot(tr_sum_remerge_short, aes(x=n_effective_rounded, y=n_disordered_trs_relative_to_ordered_trs_normalised_by_relative_sequence_length, colour=Superkingdom)) + geom_point()
+p = p + facet_wrap(~ Superkingdom, scales = "free")
+p = p + geom_abline(intercept=1, slope=0)
+beautifier(p)
+```
+
+TODO: Add error bars to indicate how many tandem repeats are represented by each shown point.
+
+
+
+
+### TODO: Find the most frequent amino acids in ordered/disordered TRs, and colour the IDR vs non IDR plots accordingly.
+```{r, echo=FALSE, eval=TRUE}
+# ToDo
+```
+
+
+### How can some very long homorepeats be sometimes annotated as disordered, sometimes as ordered???
+```{r, echo=FALSE, eval=TRUE}
+# ToDo
+tr_all_tmp = subset(tr_all, l_effective==1 & n_effective == 50 & fraction_disordered_chars < 0.1) 
+tr_all_tmp = subset(tr_all, l_effective==1 & n_effective == 50 & fraction_disordered_chars > 0.9) 
+
+subset(tr_all, ID=="B4K617")
+```
+

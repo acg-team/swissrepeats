@@ -1,0 +1,249 @@
+---
+title: "Characteristics of disorder in Swiss-Prot"
+output: html_document
+date: "December 11, 2015"
+---
+
+```{r, echo=FALSE, message=FALSE}
+
+#Use 
+#setwd("/Users/merenlin/SciLifeLab/swissrepeat/results")
+
+rm(list = ls(all = TRUE))
+gc()
+library("ggplot2")
+library("plyr")
+library("scales")
+require(grid)
+library(RColorBrewer)
+
+source("helpers.R")
+```
+
+Concatanating the data on the cluster 
+
+head -1 /proj/bioinfo/users/x_oxasa/sp/data/mobidb/split/swissprot_aa/disorder_annotations/disorder.csv > /proj/bioinfo/users/x_oxasa/sp/results/disorder_annotations/mobidb_annotations.csv && tail -n +2 -q /proj/bioinfo/users/x_oxasa/sp/data/mobidb/split/swissprot_*/disorder_annotations/disorder.csv >>  /proj/bioinfo/users/x_oxasa/sp/results/disorder_annotations/mobidb_annotations.csv
+Get all the data
+
+### Disorder annotations data overview
+```{r, echo=FALSE}
+path = "results/disorder_annotations/mobidb_annotations.csv"
+dis_all = load_disorder_annotations(path)
+head(dis_all, n=5)
+
+discoor_path = "results/disorder_annotations/mobidb_coordinates.csv"
+discoor_all = load_disorder_annotations(discoor_path)
+head(discoor_all, n=5)
+```
+
+```{r, echo=FALSE}
+sp_path = "data/swissprot_annotations.tsv"
+sp_all = load_swissprot(sp_path)
+
+tr_path = "results/tr_annotations/tr_annotations.csv"
+tr_all = load_tr_annotations(tr_path)
+
+overlap_path = "results/tr_idr_overlap/repeat_disorder_overlap_regions.csv"
+overlap_all = load_overlap_annotations(overlap_path)
+
+```
+
+
+### Connect Swiss-Prot annotation data and MobiDB annotation data.
+```{r, echo=FALSE}
+# Add meta_data from sp_all to dis_all. -> Do a left join.
+dis_all_sp = merge(x = dis_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Add boolean to sp_all: has_dis and has consensus disorder. Later, add: has disorder of specific type. 
+sp_proteins_w_dis = unique(dis_all$ID)
+sp_proteins_w_long_dis = unique(dis_all[(dis_all$disnum>=30), 'ID'])
+sp_proteins_w_short_dis = unique(dis_all[(dis_all$disnum<30), 'ID'])
+sp_proteins_w_dis_experimental = unique(dis_all[(dis_all$disnum_disprot>0 | dis_all$disnum_long>0 | dis_all$disnum_pdb_xray>0 | dis_all$disnum_pdb>0 | dis_all$disnum_pdb_nmr>0), 'ID'])
+
+sp_all$has_dis = sp_all$ID %in% sp_proteins_w_dis
+sp_all$has_long_dis = sp_all$ID %in% sp_proteins_w_long_dis
+sp_all$has_short_dis = sp_all$ID %in% sp_proteins_w_short_dis
+sp_all$has_dis_experimental = sp_all$ID %in% sp_proteins_w_dis_experimental
+
+# Add boolean to sp_all: has_tr. Later, add: has TR of specific type. 
+sp_proteins_w_trs = unique(tr_all$ID)
+sp_proteins_w_microsats = unique(tr_all[tr_all$l_effective<=4, 'ID'])
+sp_proteins_w_short_trs = unique(tr_all[tr_all$l_effective>4 & tr_all$l_effective<15, 'ID'])
+sp_proteins_w_domain_trs = unique(tr_all[tr_all$l_effective>=15, 'ID'])
+
+sp_all$has_tr = sp_all$ID %in% sp_proteins_w_trs
+sp_all$has_micro_tr = sp_all$ID %in% sp_proteins_w_microsats
+sp_all$has_short_tr = sp_all$ID %in% sp_proteins_w_short_trs
+sp_all$has_domain_tr = sp_all$ID %in% sp_proteins_w_domain_trs
+```
+
+```{r, echo=TRUE}
+print(length(sp_proteins_w_dis))
+print(length(sp_proteins_w_long_dis))
+print(length(sp_proteins_w_dis_experimental))
+```
+
+```{r, echo=FALSE, warning=FALSE}
+discoor_all$disorder_region_length =  (discoor_all$end - discoor_all$start) + 1
+discoor_all$center = floor(discoor_all$start + (discoor_all$disorder_region_length/2))
+discoor_all_sp = merge(x = discoor_all, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+Remove eventual regions with incorrect coordinates
+```{r, echo=TRUE, warning=FALSE}
+discoor_all_sp = discoor_all_sp[(discoor_all_sp$center<discoor_all_sp$Length),]
+```
+
+Aggregate disordered regions by protein, calculate disorder fraction in a protein
+```{r, echo=TRUE, warning=FALSE}
+sp_protein= ddply(discoor_all_sp, .(ID), summarize,
+disorder_count=(sum(disorder_region_length)))
+sp_protein = merge(x = sp_protein, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+### Figure 1 (b) Overview of disorder percentage in proteins of different kingdoms of life, based on a few different methods
+
+```{r, echo=FALSE, warning=FALSE}
+dis_all_sp =dis_all_sp[(dis_all_sp$disnum<dis_all_sp$Length),]
+
+library(VennDiagram)
+
+# sample four-set Venn Diagram
+consensus <- dis_all_sp[dis_all_sp$disnum>30, 'ID'];
+pdb <- dis_all_sp[dis_all_sp$disnum_pdb>30, 'ID'];
+iupl <- dis_all_sp[dis_all_sp$disnum_iupl>30, 'ID'];
+iups <- dis_all_sp[dis_all_sp$disnum_iups>30, 'ID'];
+disHL <- dis_all_sp[dis_all_sp$disnum_disHL>30, 'ID'];
+disprot <- dis_all_sp[dis_all_sp$disnum_disprot>30, 'ID'];
+
+venn.plot <- venn.diagram(
+x = list(
+"MobiDB consensus" = consensus,
+"pdb" =pdb,
+"IupL" = iupl,
+"disprot" = disprot,
+"disHL" = disHL
+),
+filename = NULL,
+col = "black",
+fill = c("dodgerblue", "goldenrod1", "darkorange1", "seagreen3", "orchid3"),
+alpha = 0.50,
+cex = c(1.5, 1.5, 1.5, 1.5, 1.5, 1, 0.8, 1, 0.8, 1, 0.8, 1, 0.8,
+1, 0.8, 1, 0.55, 1, 0.55, 1, 0.55, 1, 0.55, 1, 0.55, 1, 1, 1, 1, 1, 1.5),
+cat.col = c("dodgerblue", "goldenrod1", "darkorange1", "seagreen3", "orchid3"),
+cat.cex = 1.5,
+cat.fontface = "bold",
+margin = 0.05
+);
+grid.draw(venn.plot);
+
+```
+
+### Figure 2 (b). Sequence length vs has_disorder (OVERVIEW)
+#### Any number of disordered residues 
+```{r, echo=FALSE, warning=FALSE}
+sp = ddply(sp_all, .(origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), summarize, has_dis_fraction=sum(has_dis==TRUE)/length(ID), has_long_dis_fraction=sum(has_long_dis==TRUE)/length(ID),
+has_short_dis_fraction=sum(has_short_dis==TRUE)/length(ID), mean_sequence_length=mean(Length), count=length(ID))
+
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+colour_count = 13
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_dis_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p = p  + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7)) #scale_colour_brewer(type=2, palette="RdYlBu")
+p = p + geom_smooth(method = "lm", colour="grey", se=FALSE)
+p + theme_minimal()
+```
+
+#### Long disorder
+```{r, echo=FALSE, warning=FALSE}
+p2 = ggplot(sp, aes(x=mean_sequence_length, y=has_long_dis_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p2 = p2  + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7)) #scale_colour_brewer(type=2, palette="RdYlBu")
+p2 = p2 + geom_smooth(method = "lm", colour="grey", se=FALSE)
+p2 + theme_minimal()
+```
+
+#### Short disorder 
+```{r, echo=FALSE, warning=FALSE}
+p3 = ggplot(sp, aes(x=mean_sequence_length, y=has_short_dis_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p3 = p3  + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7)) #scale_colour_brewer(type=2, palette="RdYlBu")
+p3 = p3 + geom_smooth(method = "lm", colour="grey", se=FALSE)
+p3 + theme_minimal()
+```
+
+### Figure 2 (b). Experimenting with plotting this: plot average fractions per species
+```{r, echo=FALSE, warning=FALSE}
+sp = ddply(dis_all_sp, .(Species, Superkingdom), summarize, mean_dis_content=mean(disnum), mean_sequence_length=mean(Length), count=length(ID))
+
+p = ggplot(sp, aes(x=mean_sequence_length, y=mean_dis_content, size=log10(count))) + geom_jitter(alpha=0.5)
+p = p + geom_smooth(method = "lm", colour="grey", se=FALSE) + facet_wrap(~ Superkingdom, scales = "free") 
+p + theme_minimal()
+```
+
+### Figure 2 (b). Sequence length vs has_disorder (PER PROTEIN)
+
+#### Any number of disordered residues, length limited to 10000
+```{r, echo=FALSE, warning=FALSE}
+p = ggplot(sp_protein, aes(x=Length, y=disorder_count/Length, colour=Superkingdom)) + ylim(0,1.0) + facet_wrap(~ Superkingdom, scales = "free") + geom_jitter(alpha=0.5) + geom_smooth(method = "gam")
+p + theme_minimal()
+```
+
+```{r, echo=FALSE, warning=FALSE}
+protein_length_bin <-cut(sp_protein$Length, breaks = c(0, 50, 100, 300, 500, 1000, 1500, 2000, 3000, max(sp_protein$Length)))
+
+sp_protein$length_group = protein_length_bin
+sp_protein_bylength = ddply(sp_protein, .(length_group, origin, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, shape=Superkingdom, colour=origin, size=log(count)/10)) + geom_point(alpha=0.5, show.legend=TRUE) + ylim(0,1.0) + geom_line(aes(group=origin), size=1)
+p + theme_minimal() + theme(axis.text.x = element_text(angle=45, hjust=1))
+```
+###  Distribution of disorder regions in the protein
+
+#### Figure 3. (b) Location of IDPs in a protein
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+disorder_length_bin <-with(discoor_all_sp , cut(disorder_region_length, breaks = c(0, 5, 30, max(discoor_all_sp$disorder_region_length))))
+p = ggplot(discoor_all_sp, aes(center/Length, fill=disorder_length_bin)) +
+  geom_bar(binwidth = 0.01, position="fill")
+p + theme_minimal()
+```
+
+#### Figure 4. (b) Distributions of all disorder for the different Superkingdoms
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+p = ggplot(discoor_all_sp, aes(x = center/Length, colour=disorder_length_bin)) +
+    geom_density() + facet_wrap(~ Superkingdom, scales = "free")
+beautifier(p)
+```
+### all 
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+disorder_length_bin <-with(discoor_all_sp , cut(disorder_region_length, breaks = c(0, 30, max(discoor_all_sp$disorder_region_length))))
+p = ggplot(discoor_all_sp, aes(x = center/Length, colour=disorder_length_bin)) +
+    geom_density(size=1) + scale_color_manual( values = c("grey","turquoise4"),name  ="IDR length", breaks=c("(0,30]", "(30,6.1e+03]"),labels=c("Short", "Long")) +
+labs(x="IDR center location (center/Length)", y="Density") 
+p + theme_minimal(base_size = 18)
+```
+
+#### TR - IDR overlap: Long disorder overlapping with any repeat  
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+print("Total number of overlaps")
+nrow(overlap_all)
+overlap_all$overlap_length=(overlap_all$overlap_end-overlap_all$overlap_start)+1
+overlap_all$overlap_center=floor(overlap_all$overlap_start + (overlap_all$overlap_length/2))
+overlap_all$idr_length=(overlap_all$idr_end-overlap_all$idr_start)+1
+print("Number of proteins that contain overlaps of TRs and long disorder")
+length(unique(overlap_all$ID))
+
+
+p = ggplot(overlap_all, aes(x=overlap_length, fill=l_type, colour=l_type)) + geom_density(alpha = 0.5) + xlim(0,300) 
+p + theme_minimal() + labs(title="Distribution of overlap length (zoomed in to x = 0,300)",
+                           x="")
+
+p = ggplot(overlap_all, aes(x=total_repeat_length, y=overlap_length, colour=l_type)) +
+  geom_point(alpha = 0.5) + geom_smooth(method = "lm", se=FALSE, aes(group=l_type)) 
+p + theme_minimal() + labs(title="Overlap region length as a function of total repeat region length", x="Overlap region length", y="Total repeat region length")
+
+p = ggplot(overlap_all, aes(x=overlap_length/overlap_all$total_repeat_length, colour=l_type)) + geom_density()
+p + theme_minimal() + labs(title="Fraction of repeat region taken by disorder", x="Overlap region length/Total repeat region length")
+
+p = ggplot(overlap_all, aes(x=overlap_length/idr_length, colour=l_type)) + geom_density()
+p + theme_minimal() + labs(title="Fraction of disorder region taken by a repeat", x="Overlap region length/Total disorder region length")
+
+
+```

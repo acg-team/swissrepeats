@@ -1,0 +1,8 @@
+swissprot.csv: kingdom, aa, n, expected_frequency
+- for each kindom and each aminoacid, the homorepeatfrequency per size
+
+mobidb_consensus.csv: kingdom, aa, n, expected_frequency
+- for each kingdom and each aminoacid, the expected homorepeatfreq per size
+
+mobidb_consensus_inverse.csv: kingdom, aa, n, expected_frequency
+- for each kingdom and each aminoacid, the expected homorepeatfreq per size

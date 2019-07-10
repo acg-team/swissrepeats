@@ -1,0 +1,391 @@
+---
+title: "Tandem repeats in Swiss-Prot"
+date: "December 11, 2015"
+output: html_document
+---
+
+## Characteristics of tandem repeats in Swiss-Prot.
+
+```{r, echo=FALSE}
+# Concatenate the result files with concatenate_csv_files in []scripts.py
+# Make a .csv out of the .tsv by sed 's/      /,/g' concatenated.tsv > concatenated.csv (On OsX, add the tab in the command with ctrl+c + tab.)
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+```
+
+
+```{r, echo=FALSE, eval=TRUE}
+tr_path = "results/tr_annotations/tr_annotations.csv"
+tr_all = load_tr_annotations(tr_path)
+head(tr_all, n=5)
+
+sp_path = "data/swissprot_annotations.tsv"
+sp_all = load_swissprot(sp_path, tr_all)
+head(sp_all, n=5)
+table(sp_all$origin)
+
+# Connect Swiss-Prot annotation data and TR annotation data:
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+#### Eukaryota marked as "Unknown" (Protozoa, Algae, ...)
+```{r, echo=TRUE, eval=TRUE}
+unique(subset(sp_all, origin=="Unknown (Eukaryota)")$Species)
+```
+
+
+
+
+### Simple summary statistics:
+```{r, echo=TRUE}
+#d = subset(tr_all,  select=-c(MSA))
+#d= tr_all[ , -which(names(tr_all) %in% c("MSA"))]
+summary(tr_all)
+```
+
+
+### Fig 1a Marcotte et al.
+Show how sequence length and presence of TRs correlate.
+```{r, echo=TRUE}
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+
+sp = ddply(sp_all, .(origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), summarize, has_tr_fraction=sum(has_tr==TRUE)/length(ID), has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), mean_sequence_length=mean(Length), count=length(ID))
+
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+colour_count = 13
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p = p  + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7)) #scale_colour_brewer(type=2, palette="RdYlBu")
+p = p + geom_abline(intercept=0, slope=mean(sp$has_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")
+p = p + ggtitle('All tandem repeats')
+p = beautifier(p)
+p
+```
+
+```{r, echo=FALSE, fig.width=11, fig.height=10}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_micro_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p = p + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7))
+p = p + geom_abline(intercept=0, slope=mean(sp$has_micro_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")
+p = p + ggtitle('Micro tandem repeats')
+beautifier(p)
+```
+
+```{r, echo=FALSE, fig.width=11, fig.height=10}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_short_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p = p + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7))
+p = p + geom_abline(intercept=0, slope=mean(sp$has_short_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")
+p = p + ggtitle('Short tandem repeats')
+beautifier(p)
+```
+
+```{r, echo=FALSE, fig.width=11, fig.height=10}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_domain_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + geom_point()
+p = p + scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7))
+p = p + geom_abline(intercept=0, slope=mean(sp$has_domain_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")
+p = p + ggtitle('Domain tandem repeats')
+beautifier(p)
+```
+
+
+### Fig 1b Marcotte et al.
+Show how sequence length and presence of TRs correlate.
+```{r, echo=TRUE}
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+
+sequence_length_bin <- with(sp_all, cut(Length, breaks = c(0, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1250, 1500, 2000, 50000)))
+sp <- ddply(sp_all, .(Superkingdom, sequence_length_bin), summarise, has_tr_fraction=sum(has_tr==TRUE)/length(ID), has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), n_proteins=length(ID))
+sp$has_tr_fraction_binary_proportion_confidence_interval = sqrt(sp$has_tr_fraction*(1-sp$has_tr_fraction)/sp$n_proteins)
+
+
+# Need to summarize data for blocks of "Length".
+# For the error bars, see https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + geom_errorbar(aes(ymin=has_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval, ymax=has_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)
+p = p + scale_colour_brewer(type=2, palette="RdYlBu")
+beautifier(p)
+
+```
+
+#### Micro TRs
+```{r, echo=FALSE}
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_micro_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + geom_errorbar(aes(ymin=has_micro_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval, ymax=has_micro_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)
+p = p + scale_colour_brewer(type=2, palette="RdYlBu")
+beautifier(p)
+```
+
+#### Short TRs
+```{r, echo=FALSE}
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_short_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + geom_errorbar(aes(ymin=has_short_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval, ymax=has_short_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)
+p = p + scale_colour_brewer(type=2, palette="RdYlBu")
+beautifier(p)
+```
+
+#### Domain TRs
+```{r, echo=FALSE}
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_domain_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + geom_errorbar(aes(ymin=has_domain_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval, ymax=has_domain_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)
+p = p + scale_colour_brewer(type=2, palette="RdYlBu")
+beautifier(p)
+```
+
+
+### Sequence length distribution in Swiss-Prot.
+```{r, echo=TRUE}
+p = ggplot(sp, aes(x=sequence_length_bin, y=log10(n_proteins), colour=Superkingdom)) + geom_point()
+p = p + scale_colour_brewer(type=2, palette="RdYlBu")
+beautifier(p)
+```
+
+### Distribution of TRs per protein
+```{r, echo=FALSE, eval=FALSE}
+# Warning: Very slow!
+# WARNING! Check that you actually count the number of proteins with no TRs!!!
+d_per_protein = ddply(tr_all_sp, .(ID, protein_name, origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), 
+                      summarize, 
+                      n_trs_per_protein = length(ID))
+
+
+p = ggplot(d_per_protein, aes(x=n_trs_per_protein)) +
+  geom_histogram(binwidth=1, position = "identity", fill="white", colour="grey") + 
+  scale_y_sqrt()
+p = beautifier(p)
+p
+```
+
+proteins with > 40 TRs:
+```{r}
+many_trs = d_per_protein[which(d_per_protein$n_trs_per_protein > 40), ]
+many_trs
+# e.g., Q6PZE0 is murine Mucin.
+
+p = ggplot(many_trs, aes(x=n_trs_per_protein)) +
+  geom_histogram(binwidth=1, position = "identity", fill="white", colour="grey") + 
+  scale_y_sqrt() # TODO: x-axis label acording to the protein name.
+p = beautifier(p)
+p
+```
+
+Stacked plot superkingdoms:
+```{r, echo=FALSE, eval=FALSE}
+n_trs_bin <- with(d_per_protein, cut(n_trs_per_protein, breaks = c(0, 1, 2, 3, 4, 5, 6, 1000)))
+d_cut <- ddply(d_per_protein, .(Superkingdom, n_trs_bin), summarise, count=length(ID)) # Kingdom, is_chloroplastic, is_mitochondrial
+
+local_colors = rev(c("black", "blue4", "blue1", "orangered", "goldenrod", "gold", "papayawhip"))
+
+p = ggplot(d_cut,aes(x = Superkingdom, y = count, fill = n_trs_bin)) + 
+    geom_bar(position = "fill",stat = "identity") 
+p = p + scale_y_continuous(labels = percent_format()) 
+p = p + scale_fill_manual(values=c(cols1, cols2, cols3)) #local_colors
+beautifier(p)
+
+```
+
+Stacked plot fine split:
+```{r, echo=FALSE, eval=FALSE}
+n_trs_bin <- with(d_per_protein, cut(n_trs_per_protein, breaks = c(0, 1, 2, 3, 4, 5, 6, 1000)))
+d_cut <- ddply(d_per_protein, .(origin, n_trs_bin), summarise, count=length(ID)) # Kingdom, is_chloroplastic, is_mitochondrial
+
+p = ggplot(d_cut,aes(x = origin, y = count, fill = n_trs_bin)) + 
+    geom_bar(position = "fill",stat = "identity") 
+p = p + scale_y_continuous(labels = percent_format()) 
+p = p + scale_fill_manual(values=local_colors)
+beautifier(p)
+```
+
+
+### Distribution of PFAM domain annotations in the superkingdoms, kingdoms, and across mitochondiral and chloroplastic genes (~ Fig4. Marcotte et al.).
+```{r, echo=TRUE, eval=TRUE}
+d_sub = subset(tr_all_sp, TRD=="PFAM")
+
+d = ddply(d_sub, .(Superkingdom, is_chloroplastic, is_mitochondrial, model), summarize, count=length(ID))
+d_cut = subset(d, Superkingdom=="Bacteria")
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Archaea")
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Viruses")
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d = ddply(d_sub, .(Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial, model), summarize, count=length(ID))
+d_cut = subset(d, Superkingdom=="Eukaryota" & Kingdom == "Viridiplantae" & is_mitochondrial==FALSE & is_chloroplastic==FALSE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Eukaryota" & Kingdom == "Metazoa" & is_mitochondrial==FALSE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Eukaryota" & Kingdom == "Fungi" & is_mitochondrial==FALSE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d = ddply(d_sub, .(is_chloroplastic, is_mitochondrial, model), summarize, count=length(ID))
+d_cut = subset(d, is_mitochondrial==TRUE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, is_chloroplastic==TRUE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+```
+
+
+### Location of TRs in the sequence, measured by center_of_tandem_repeat/protein_length.
+
+#### Location of domain TRs (20-40aa) in long sequences (>500aa)
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE}
+d = subset(tr_all_sp, l_effective >= 15 & l_effective < 30 & Length > 500)
+hist(d$begin/d$Length, breaks=100)
+
+d = subset(tr_all_sp, l_effective >= 15 & l_effective < 30 & Length > 500)
+hist(d$center/d$Length, breaks=100)
+```
+
+
+#### Stacked location of TRs.
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE}
+# Use better cutting http://www.r-bloggers.com/r-function-of-the-day-cut/
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0, 1, 2, 3, 4, 5, 7, 10, 15, 30, 2000)))
+p = ggplot(tr_all_sp, aes(x = center/Length, fill=repeat_type_bin)) +
+    geom_bar()
+beautifier(p)
+```
+
+#### Distributions for all TRs in Swiss-Prot
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE}
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin)) +
+    geom_density()
+beautifier(p)
+```
+
+
+#### Distributions for the different Superkingdoms.
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE}
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin)) +
+    geom_density() + facet_wrap(~ Superkingdom, scales = "free")
+beautifier(p)
+```
+
+
+#### Distributions for all different "origins".
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE, fig.width=20, fig.height=20}
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin)) +
+    geom_density() + facet_wrap(~ origin, scales = "free")
+beautifier(p)
+```
+
+#### Distributions for different Kingdoms within the Eukaryotes:
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE, fig.height=15}
+d_tmp = subset(tr_all_sp, Superkingdom == "Eukaryota")
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin)) +
+    geom_density() + facet_grid(Kingdom ~ .)
+beautifier(p)
+```
+
+
+### Count of TRs as a function of $l_{effective}$ and $n_{effective}$ (Related to Figs. 5a&b in Marcotte et al.)
+
+Heatmap of of $l_{effective}$ vs $n_{effective}$.
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE, fig.width=20, fig.height=20}
+d = subset(tr_all,  pvalue <= 0.01 & l_effective < 100 & n_effective < 100)
+
+d$n_effective_rounded = round(d$n_effective)
+d_summary = ddply(d, .(l_effective, n_effective_rounded), summarize, count=length(MSA), log10count=log10(length(MSA)))
+tile_plot_x1x2(d_summary, "l_effective", "n_effective_rounded", "log10count", FALSE)
+```
+
+Heatmap of $l_{effective}$ vs $n_{effective}$ - ZOOM IN.
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE, fig.width=20, fig.height=15}
+d = subset(tr_all,  pvalue <= 0.01 & l_effective < 80 & n_effective < 30)
+
+d$n_effective_rounded = round(d$n_effective)
+d_summary = ddply(d, .(l_effective, n_effective_rounded), summarize, count=length(MSA), log10count=log10(length(MSA)))
+tile_plot_x1x2(d_summary, "l_effective", "n_effective_rounded", "log10count", FALSE)
+```
+
+#### Distribution of $l_{effective}$ (~ Fig. 5a in Marcotte et al.)
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE, fig.width=20, fig.height=20}
+d = subset(tr_all, l_effective < 200)
+p = ggplot(d, aes(x=l_effective))
+p = p + geom_histogram(binwidth=3, colour = "grey", fill = "white") + scale_y_log10()
+beautifier(p)
+```
+
+
+#### Distribution of $l_{effective} \cdot n_{effective}$ (~ Fig. 5b in Marcotte et al.)
+```{r, warning=FALSE, eval=TRUE, echo=TRUE, message=FALSE, fig.width=20, fig.height=20}
+# Prettify this by following e.g. http://stackoverflow.com/questions/13734368/ggplot2-and-a-stacked-bar-chart-with-negative-values
+d = subset(tr_all)
+d$repeat_length = d$l_effective * d$n_effective
+d = subset(d, repeat_length < 1000)
+p = ggplot(d, aes(x=repeat_length))
+p = p + geom_histogram(binwidth=3, position = "identity", colour = "grey", fill = "white") + scale_y_log10()
+beautifier(p)
+```
+
+### Connection between viruses and viral hosts
+TODO: where is this file stored/generated? ```virus_host_pairs_host_taxname_in_sp.csv```
+-> solved
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE, fig.width=20, fig.height=20}
+
+path = "/home/matteo/polybox/MSc_ACLS/swissrepeat/results/virus_host_pairs_host_taxname_in_sp.csv"
+d_virus_host = read.csv(path, sep=",", header = TRUE, quote="")
+
+# 1. Summarize tr_all_sp for each per protein: d_per_protein
+# Warning - slow code:
+# Todo: add info on location of TR center.
+d_per_protein = ddply(tr_all_sp, .(ID), summarize, n_tr=length(ID), n_tr_micro=sum(l_effective<=4), n_tr_short=sum(l_effective>4 & l_effective<15), n_tr_domain=sum(l_effective>=15), .parallel = TRUE)
+
+# 2. Add d_per_protein info to d_sp. Make sure that Na in columns are zero. 
+d_sp_and_tr = merge(x = sp_all, y = d_per_protein, by = "ID", all.x = TRUE)
+d_sp_and_tr$n_tr[is.na(d_sp_and_tr$n_tr)] = 0
+d_sp_and_tr$n_tr_micro[is.na(d_sp_and_tr$n_tr_micro)] = 0
+d_sp_and_tr$n_tr_short[is.na(d_sp_and_tr$n_tr_short)] = 0
+d_sp_and_tr$n_tr_domain[is.na(d_sp_and_tr$n_tr_domain)] = 0
+
+data_per_species = ddply(d_sp_and_tr, .(Species, Species_ID, Superkingdom, Family, origin), summarize, f_tr=sum(n_tr)/length(ID), f_tr_micro=sum(n_tr_micro)/length(ID), f_tr_short=sum(n_tr_short)/length(ID), f_tr_domain=sum(n_tr_domain)/length(ID))
+
+# Add meta_data from data_per_species to d_virus_host -> Do a left join.
+library(reshape)
+data_per_species <- rename(data_per_species,c('Species'='virus_TaxName'))
+d_virus_host_data = merge(x = d_virus_host, y = data_per_species, by = "virus_TaxName", all.x = TRUE)
+d_virus_host_data$Species_ID = NULL
+d_virus_host_data$Superkingdom = NULL
+d_virus_host_data$origin = NULL
+# Rename probably works, and would be prettier. Replace.
+d_virus_host_data$virus_Family = d_virus_host_data$Family
+d_virus_host_data$virus_f_tr = d_virus_host_data$f_tr
+d_virus_host_data$virus_f_tr_micro = d_virus_host_data$f_tr_micro
+d_virus_host_data$virus_f_tr_short = d_virus_host_data$f_tr_short
+d_virus_host_data$virus_f_tr_domain = d_virus_host_data$f_tr_domain
+d_virus_host_data$Family = NULL
+d_virus_host_data$f_tr = NULL
+d_virus_host_data$f_tr_micro = NULL
+d_virus_host_data$f_tr_short = NULL
+d_virus_host_data$f_tr_domain = NULL
+
+# Add meta_data from data_per_species to d_virus_host -> Do a left join.
+data_per_species <- rename(data_per_species,c('virus_TaxName'='virushost_TaxName'))
+d_virus_host_data = merge(x = d_virus_host_data, y = data_per_species, by = "virushost_TaxName")
+d_virus_host_data$Species_ID = NULL
+d_virus_host_data$host_origin = d_virus_host_data$origin
+d_virus_host_data$host_Superkingdom = d_virus_host_data$Superkingdom
+d_virus_host_data$host_Family = d_virus_host_data$Family
+d_virus_host_data$host_f_tr = d_virus_host_data$f_tr
+d_virus_host_data$host_f_tr_micro = d_virus_host_data$f_tr_micro
+d_virus_host_data$host_f_tr_short = d_virus_host_data$f_tr_short
+d_virus_host_data$host_f_tr_domain = d_virus_host_data$f_tr_domain
+d_virus_host_data$origin = NULL
+d_virus_host_data$Superkingdom = NULL
+d_virus_host_data$Family = NULL
+d_virus_host_data$f_tr = NULL
+d_virus_host_data$f_tr_micro = NULL
+d_virus_host_data$f_tr_short = NULL
+d_virus_host_data$f_tr_domain = NULL
+
+p = ggplot(d_virus_host_data, aes(x=host_f_tr, y=virus_f_tr))
+p = p + geom_point()
+beautifier(p)
+
+cor(d_virus_host_data$host_f_tr, d_virus_host_data$virus_f_tr)
+```

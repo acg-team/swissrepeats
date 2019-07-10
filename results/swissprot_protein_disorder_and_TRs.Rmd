@@ -1,0 +1,1054 @@
+---
+title: 'Mean Disorder Content and TRs'
+output:
+  html_document: default
+  pdf_document: default
+date: "March, 2019"
+---
+
+# Housekeeping
+```{r Housekeeping, echo=FALSE, message=FALSE, warning=FALSE}
+# Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
+setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
+source("local_config.R")
+setwd(paste0(local_base_path,"/results"))
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+
+# colour setup:
+#library(RColorBrewer); display.brewer.all() # to display available colour palettes
+colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
+getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
+cols1 <- c("#AA3939", "#AA7939", "#29506D", "#2D882D")  #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+cols2 <- c("#FFAAAA", "#FFDBAA", "#718EA4", "#88CC88") 
+cols3 <- c("#801515", "#805215", "#123652", "#116611")
+cols4 <- c("#550000", "#553100", "#042037", "#004400")
+```
+
+# Data Loading 
+```{r Data Loading , echo=FALSE, eval=TRUE}
+tr_path = paste0("results", local_path_separator, "tr_annotations", local_path_separator, "tr_annotations.csv")
+tr_all = load_tr_annotations(tr_path)
+
+sp_path = paste0("data", local_path_separator, "swissprot_annotations.tsv")
+sp_all = load_swissprot(sp_path, tr_all)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Add disorder information from modiDB
+discoor_path = paste0("results", local_path_separator, "disorder_annotations", local_path_separator, "mobidb_coordinates.csv")
+discoor_all = load_disorder_annotations(discoor_path)
+
+discoor_all$disorder_region_length =  (discoor_all$end - discoor_all$start) + 1
+discoor_all$center = floor(discoor_all$start + (discoor_all$disorder_region_length/2))
+discoor_all_sp = merge(x = discoor_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Remove eventual regions with incorrect coordinates
+discoor_all_sp = discoor_all_sp[(discoor_all_sp$center<discoor_all_sp$Length),]
+
+#Aggregate disordered regions by protein, calculate disorder residues count in a protein
+sp_protein= ddply(discoor_all, .(ID), summarize,
+  disorder_count=(sum(disorder_region_length)))
+sp_protein = merge(x = sp_protein, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+# Mean disorder content vs protein length
+### Fig 2b
+```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=7}
+protein_length_bin <-cut(sp_protein$Length, breaks = c(0, 50, 100, 300, 500, 1000, 1500, 2000, 3000, max(sp_protein$Length)), dig.lab=12)
+
+sp_protein$length_group = protein_length_bin
+sp_protein_bylength = ddply(sp_protein, .(length_group, origin, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, shape=Superkingdom, colour=origin, size=log(count)/10)) +
+  geom_point(alpha=0.5, show.legend=TRUE) + 
+  ylim(0,1.0) + 
+  geom_line(aes(group=origin), size=0.3)+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size = 2)) + # size = 8
+  labs(y="Mean disorder content",
+       x="Protein Length")+
+  scale_color_manual(values = morecolors2)
+p <- paper.figure(p, x.axis.text.angle = 45)
+p
+if( save) {
+  ggsave(paste0(pathImages, "fig2b", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=7}
+sp_protein_bylength = ddply(sp_protein, .(length_group, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, colour=Superkingdom, size=log10(count))) + 
+  geom_point(alpha=0.5, show.legend=TRUE) + 
+  ylim(0,1.0) + 
+  geom_line(aes(group=Superkingdom), size=0.3)+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=8)) +
+  labs(y="Mean disorder content",
+       x="Protein Length")+
+  scale_color_manual(values = morecolors2)
+p <- paper.figure(p, x.axis.text.angle = 45)
+p
+if( save) {
+  ggsave(paste0(pathImages, "fig2b_simple", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+
+# Disordered Region overlapping with TR regions (Venn Diagram)
+
+```{r no. of AA in swissprot proteins}
+aa_count <- read.csv(paste0(local_base_path, local_path_separator, "data", local_path_separator, "aa_count.csv"), header = TRUE) # created in file: "swissprot_aminoacid_distribution.Rmd"
+aa_count
+
+AA_proteins <- sum(as.numeric(aa_count$aa_freq_sp[which(!is.na(aa_count$aa_freq_sp))]))
+AA_proteins
+```
+
+```{r no. of all AA in TR regions}
+AA_TRs <- sum(as.numeric(aa_count$aa_freq_tr[which(!is.na(aa_count$aa_freq_tr))]))
+AA_TRs
+```
+
+```{r no of AA in disordered regions}
+sum(sp_protein$disorder_count) # disorder region length aggregated by protein. Logically, the sum is the same as above.
+
+AA_Disorder <- sum(discoor_all$disorder_region_length)
+AA_Disorder
+```
+
+```{r IDR overlap with tandemly repeated regions}
+sum(tr_all_overlap$total_overlap)/AA_Disorder
+```
+
+```{r no of AA from overlapping regions of disorder region & TR region}
+# # add to each TR a unique identification number: TR_id
+# tr_all <- tr_all %>% 
+#   mutate(TR_id = row_number())
+# 
+# # add to each TR the position in the protein where the TR sequence ends: end
+# tr_all <- tr_all %>% 
+#   mutate(end = begin+total_repeat_length)
+# 
+# # initallize for each TR the overlap columns
+# tr_all <- tr_all %>% 
+#   mutate(tail_overlap = 0,
+#          head_overlap = 0,
+#          DisinTR_overlap = 0,
+#          TRinDis_overlap = 0,
+#          total_overlap = 0)
+# 
+# str(tr_all)
+# 
+# # add to each disorder region a unique identification number: DIS_id
+# discoor_all <- discoor_all %>% 
+#   mutate(DIS_id = row_number())
+# 
+# # set progressbar object:
+# pb = txtProgressBar(min = 0, max = length(sp_all), initial = 0, style = 3) 
+# stepi = 0
+# 
+# start_time <- Sys.time()
+# for (IDprot in sp_all$ID[1:20]){ # for each protein in swissprot. Subset sp_all$ID[1:1000] takes about 10min
+#   if (IDprot %in% tr_all$ID){ # check if the protein has a TR
+#     for (IDdis in discoor_all$DIS_id[which(discoor_all$ID == IDprot)]){ # extract all disorder regions from this protein
+#       for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+#         if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+#             tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+#             discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+#           {# check for each TR region if it has a tail-overlap with a disorder region
+#           
+#           ## This chunck is for debugging:
+#           print(paste("TR-id", IDtr,
+#                       # "prot-id", IDprot,
+#                       # "discoor-id", IDdis,
+#                       # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+#                       "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+#                       "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+#                       "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+#                       "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+#                       "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+#         }}}}}
+#         end_time <- Sys.time()
+#         end_time - start_time
+# 
+#           tr_all$tail_overlap[which(tr_all$TR_id == IDtr)] = tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]
+#         } 
+#         if (discoor_all$end[which(discoor_all$DIS_id == IDdis)] > tr_all$begin[which(tr_all$TR_id == IDtr)] &
+#                    discoor_all$end[which(discoor_all$DIS_id == IDdis)] < tr_all$end[which(tr_all$TR_id == IDtr)] &
+#                    discoor_all$start[which(discoor_all$DIS_id == IDdis)] <= tr_all$begin[which(tr_all$TR_id == IDtr)])
+#           { # or if it has a head-overlap with a disorder region
+#           tr_all$head_overlap[which(tr_all$TR_id == IDtr)] = discoor_all$end[which(discoor_all$DIS_id == IDdis)] - tr_all$begin[which(tr_all$TR_id == IDtr)]
+#         } 
+#         if (tr_all$begin[which(tr_all$TR_id == IDtr)] <= discoor_all$start[which(discoor_all$DIS_id == IDdis)] & 
+#                    discoor_all$end[which(discoor_all$DIS_id == IDdis)] <= tr_all$end[which(tr_all$TR_id == IDtr)])
+#           { # or if the whole disorder region lies in the TR-region
+#           tr_all$DisinTR_overlap[which(tr_all$TR_id == IDtr)] = discoor_all$disorder_region_length[which(discoor_all$DIS_id == IDdis)]
+#         } 
+#         if (tr_all$begin[which(tr_all$TR_id == IDtr)] >= discoor_all$start[which(discoor_all$DIS_id == IDdis)] & 
+#                    discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)])
+#           { # or if the whole disorder region is bigger than the whole TR region. i.e. the whole TR region lies in a disorder region.
+#           tr_all$TRinDis_overlap[which(tr_all$TR_id == IDtr)] = tr_all$total_repeat_length[which(tr_all$TR_id == IDtr)] 
+#         } 
+#         stepi = stepi+1 # Progressbar
+#         setTxtProgressBar(pb,stepi) # Progressbar
+#       }
+#     }
+#   }
+#   
+# }
+# end_time <- Sys.time()
+# 
+# end_time - start_time
+# # check if correct
+# # tr_all[which(tr_all$TR_id == 172904), ] # No overlap
+# # discoor_all[which(discoor_all$ID == "P30443"),] # since overlap region of this protein don't fall into the TR above
+# # 
+# # tr_all[which(tr_all$TR_id == 172906), ] # example for body overlap: [1] "TR-id 172906 TR-start 335 TR-end 356 discorr-start 335 discorr-end 365 tail_overlap 21" ID: P30443
+# 
+# # summarize overlap by TR (if one TR has multiple overlap, these are aggregated here)
+# tr_all$total_overlap <- rowSums(tr_all[,c("tail_overlap", "head_overlap", "TRinDis_overlap", "DisinTR_overlap")])
+
+# save tr_overlap to file:
+# write.csv(tr_all, file = paste0(local_base_path, "/data/tr_all_overlap_subset.csv"))
+
+# load file from calculated on cluster:
+tr_all_overlap <- read.csv(paste0(local_base_path, local_path_separator, "data", local_path_separator, "tr_all_overlap.csv"), header = TRUE)
+
+# summarize overlap by protein
+overlap_by_protein= ddply(tr_all_overlap, .(ID), summarize, #Aggregate disordered regions by protein, calculate disorder residues count in a protein
+  total_TR_length_prot = sum(total_repeat_length),
+  total_disorder_length_prot = sum(disordered_overlap),
+  total_overlap_prot=sum(total_overlap),
+  tail_overlap_prot=sum(tail_overlap),
+  head_overlap_prot=sum(head_overlap),
+  DisinTR_overlap_prot=sum(DisinTR_overlap),
+  TRinDis_overlap_prot=sum(TRinDis_overlap))
+sp_overlap = merge(x = overlap_by_protein, y = sp_all, by = "ID", all.x = TRUE)
+
+# total overlapping amino acids of all proteins
+AA_overlap <- sum(sp_overlap$total_overlap_prot) #1634
+AA_overlap
+```
+
+```{r evaluation of different parallel versions}
+# add to each TR a unique identification number: TR_id
+tr_all <- tr_all %>% 
+  mutate(TR_id = row_number())
+
+# add to each TR the position in the protein where the TR sequence ends: end
+tr_all <- tr_all %>% 
+  mutate(end = begin+total_repeat_length)
+
+# initallize for each TR the overlap columns
+tr_all <- tr_all %>% 
+  mutate(tail_overlap = 0,
+         head_overlap = 0,
+         DisinTR_overlap = 0,
+         TRinDis_overlap = 0,
+         total_overlap = 0)
+
+str(tr_all)
+
+# add to each disorder region a unique identification number: DIS_id
+discoor_all <- discoor_all %>% 
+  mutate(DIS_id = row_number())
+
+### with foreach on the most outer loop (no paralell)
+system.time(
+  foreach(i=1:length(sp_all$ID[1:30]), .combine = 'rbind') %do% { # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+  IDprot <- sp_all$ID[i]
+  if (IDprot %in% tr_all$ID){ # check if the protein has a TR
+    for (IDdis in discoor_all$DIS_id[which(discoor_all$ID == IDprot)]){ # extract all disorder regions from this protein
+      for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+        if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }}}}}
+)
+
+
+### with foreach on the most outer loop (paralell)
+# register cluster
+cl <- makeCluster(numcores)
+registerDoParallel(cl)
+
+system.time(
+  foreach(i=1:length(sp_all$ID[1:30]), .combine = 'rbind') %dopar% { # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+  IDprot <- sp_all$ID[i]
+  if (IDprot %in% tr_all$ID){ # check if the protein has a TR
+    for (IDdis in discoor_all$DIS_id[which(discoor_all$ID == IDprot)]){ # extract all disorder regions from this protein
+      for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+        if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }}}}}
+)
+
+stopCluster(cl)
+
+
+### with foreach on the most outer loop and an iterator object (no paralell)
+foreach(IDprot=iter(sp_all$ID[1:30]), .combine = 'rbind') %do% { # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+  if (IDprot %in% tr_all$ID){ # check if the protein has a TR
+    for (IDdis in discoor_all$DIS_id[which(discoor_all$ID == IDprot)]){ # extract all disorder regions from this protein
+      for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+        if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }}}}}
+
+### with foreach on the most outer loop, iterator object, when statement (no paralell)
+foreach(IDprot=iter(sp_all$ID[1:30]), .combine = 'rbind') %:%
+  when(IDprot %in% tr_all$ID) %do% {   # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    for (IDdis in discoor_all$DIS_id[which(discoor_all$ID == IDprot)]){ # extract all disorder regions from this protein
+      for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+        if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }}}}
+
+
+### with foreach on the 2 outer loops, iterator object, when statement (no paralell)
+foreach(IDprot=iter(sp_all$ID[1:30]), .combine = 'rbind') %:%
+  when(IDprot %in% tr_all$ID) %do% {   # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %do% { # extract all disorder regions from this protein
+      for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+        if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }}}}
+
+### with foreach on the 3 outer loops, iterator object, when statement (no paralell)
+foreach(IDprot=iter(sp_all$ID[1:30]), .combine = 'rbind') %:%
+  when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %:% # extract all disorder regions from this protein
+      foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind') %do% { # loop through all TRs of this protein
+        if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }}
+
+### with foreach on the 3 outer loops, iterator object, multiple when statements (no paralell)
+foreach(IDprot=iter(sp_all$ID[1:30]), .combine = 'rbind') %:%
+  when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %:% # extract all disorder regions from this protein
+      foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind') %:% # loop through all TRs of this protein
+        when(tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) %do%
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }
+
+### with foreach on the 3 outer loops, iterator object, when statement (paralell)
+# register cluster
+cl <- makeCluster(numcores)
+registerDoParallel(cl)
+
+system.time(
+foreach(IDprot=iter(sp_all$ID[1:300]), .combine = 'rbind') %:%
+  when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %:% # extract all disorder regions from this protein
+      foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind') %:% # loop through all TRs of this protein
+        when(tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) %dopar%
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }
+)
+
+stopCluster(cl)
+
+### with foreach on the 3 outer loops, iterator object, when statement (paralell with NWS backend for chunking)
+### NOTE: NWS not available for current R version. Using instead MPI
+# # register cluster
+# cl <- makeCluster(numcores)
+# registerDoParallel(cl)
+# 
+# system.time(
+# foreach(IDprot=iter(sp_all$ID[1:300]), .combine = 'rbind') %:%
+#   when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+#     foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %:% # extract all disorder regions from this protein
+#       foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind', .options.nws=list(chunkSize=2)) %:% # loop through all TRs of this protein
+#         when(tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+#             tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+#             discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) %dopar%
+#           {# check for each TR region if it has a tail-overlap with a disorder region
+#           
+#           ## This chunck is for debugging:
+#           print(paste("TR-id", IDtr,
+#                       # "prot-id", IDprot,
+#                       # "discoor-id", IDdis,
+#                       # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+#                       "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+#                       "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+#                       "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+#                       "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+#                       "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+#         }
+# )
+# 
+# stopCluster(cl)
+
+
+### with foreach on the 3 outer loops, iterator object, when statement (paralell MPI backend for chunking) 
+### NOTE: R session crashes when closing the cluster
+# # register cluster
+# require(doMPI)
+# cl <- startMPIcluster()
+# registerDoMPI(cl)
+# opt <- list(chunkSize=10)
+# 
+# 
+# system.time(
+# foreach(IDprot=iter(sp_all$ID[1:300]), .combine = 'rbind', .options.mpi=opt) %:%
+#   when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+#     foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %:% # extract all disorder regions from this protein
+#       foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind') %:% # loop through all TRs of this protein
+#         when(tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+#             tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+#             discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) %dopar%
+#           {# check for each TR region if it has a tail-overlap with a disorder region
+#           
+#           ## This chunck is for debugging:
+#           print(paste("TR-id", IDtr,
+#                       # "prot-id", IDprot,
+#                       # "discoor-id", IDdis,
+#                       # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+#                       "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+#                       "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+#                       "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+#                       "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+#                       "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+#         }
+# )
+# 
+# closeCluster(cl)
+
+### TODO with foreach on the 3 outer loops, iterator object, when statement (paralell, manual chunking)
+# register cluster
+cl <- makeCluster(numcores)
+registerDoParallel(cl)
+
+# split sp_all into equally sized chunks
+# foreach chunck of sp_all_chunk
+system.time(
+foreach(IDprot=iter(sp_all$ID[1:300]), .combine = 'rbind') %:%
+  when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind') %:% # extract all disorder regions from this protein
+      foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind') %:% # loop through all TRs of this protein
+        when(tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) %dopar%
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        }
+)
+
+stopCluster(cl)
+
+### with foreach on the 3 outer loops, iterator object, when statement (forking instead of parallell)
+# register cluster
+cl <- makeCluster(numcores, type = "FORK")
+registerDoParallel(cl)
+
+system.time(
+foreach(IDprot=iter(sp_all$ID[1:300]), .combine = 'rbind', .inorder=TRUE) %:%
+  when(IDprot %in% tr_all$ID) %:%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    foreach(IDdis=iter(discoor_all$DIS_id[which(discoor_all$ID == IDprot)]), .combine = 'rbind', .inorder=TRUE) %:% # extract all disorder regions from this protein
+      foreach(IDtr=iter(tr_all$TR_id[which(tr_all$ID == IDprot)]), .combine = 'rbind', .inorder=TRUE) %:% # loop through all TRs of this protein
+        when(tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+            discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) %dopar%
+          {# check for each TR region if it has a tail-overlap with a disorder region
+          
+          ## This chunck is for debugging:
+          print(paste("TR-id", IDtr,
+                      # "prot-id", IDprot,
+                      # "discoor-id", IDdis,
+                      # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+                      "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+                      "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+                      "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+                      "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+                      "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+        } %:%
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+)
+
+stopCluster(cl)
+
+
+```
+
+```{r  no of AA from overlapping regions of disorder region & TR region (paralell)}
+# add to each TR a unique identification number: TR_id
+tr_all <- tr_all %>% 
+  mutate(TR_id = row_number())
+
+# add to each TR the position in the protein where the TR sequence ends: end
+tr_all <- tr_all %>% 
+  mutate(end = begin+total_repeat_length)
+
+# initallize for each TR the overlap columns
+tr_all <- tr_all %>% 
+  mutate(tail_overlap = 0,
+         head_overlap = 0,
+         DisinTR_overlap = 0,
+         TRinDis_overlap = 0,
+         total_overlap = 0)
+
+# add to each disorder region a unique identification number: DIS_id
+discoor_all <- discoor_all %>% 
+  mutate(DIS_id = row_number())
+
+# register cluster
+cl <- makeCluster(numcores, type = "FORK")
+registerDoParallel(cl)
+
+### with foreach on the first outer loop, iterator object, when statement (forking instead of parallell)
+foreach(IDprot=iter(sp_all$ID[1:300]), .combine = 'rbind', .inorder=TRUE) %:%
+  when(IDprot %in% tr_all$ID) %dopar%    # for each protein in swissprot. subset sp_all$ID[1:30] good for debugging, finds two results and takes about few seconds. Subset sp_all$ID[1:1000] takes about 10min
+    for (IDdis in discoor_all$DIS_id[which(discoor_all$ID == IDprot)]){ # extract all disorder regions from this protein
+          for (IDtr in tr_all$TR_id[which(tr_all$ID == IDprot)]){ # loop through all TRs of this protein
+            if (tr_all$end[which(tr_all$TR_id == IDtr)] > discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+                tr_all$begin[which(tr_all$TR_id == IDtr)] < discoor_all$start[which(discoor_all$DIS_id == IDdis)] &
+                discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)]) 
+              {# check for each TR region if it has a tail-overlap with a disorder region
+              
+              ### This chunck is for debugging:
+              # print(paste("TR-id", IDtr,
+              #             # "prot-id", IDprot,
+              #             # "discoor-id", IDdis,
+              #             # "discoor-protid", discoor_all$DIS_id[which(discoor_all$ID == IDprot)],
+              #             "TR-start", tr_all$begin[which(tr_all$TR_id == IDtr)],
+              #             "TR-end", tr_all$end[which(tr_all$TR_id == IDtr)],
+              #             "discorr-start", discoor_all$start[which(discoor_all$DIS_id == IDdis)],
+              #             "discorr-end", discoor_all$end[which(discoor_all$DIS_id == IDdis)],
+              #             "tail_overlap", tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]))
+              # }}}}}
+    
+              tr_all$tail_overlap[which(tr_all$TR_id == IDtr)] = tr_all$end[which(tr_all$TR_id == IDtr)] - discoor_all$start[which(discoor_all$DIS_id == IDdis)]
+            } 
+            if (discoor_all$end[which(discoor_all$DIS_id == IDdis)] > tr_all$begin[which(tr_all$TR_id == IDtr)] &
+                       discoor_all$end[which(discoor_all$DIS_id == IDdis)] < tr_all$end[which(tr_all$TR_id == IDtr)] &
+                       discoor_all$start[which(discoor_all$DIS_id == IDdis)] <= tr_all$begin[which(tr_all$TR_id == IDtr)])
+              { # or if it has a head-overlap with a disorder region
+              tr_all$head_overlap[which(tr_all$TR_id == IDtr)] = discoor_all$end[which(discoor_all$DIS_id == IDdis)] - tr_all$begin[which(tr_all$TR_id == IDtr)]
+            } 
+            if (tr_all$begin[which(tr_all$TR_id == IDtr)] <= discoor_all$start[which(discoor_all$DIS_id == IDdis)] & 
+                       discoor_all$end[which(discoor_all$DIS_id == IDdis)] <= tr_all$end[which(tr_all$TR_id == IDtr)])
+              { # or if the whole disorder region lies in the TR-region
+              tr_all$DisinTR_overlap[which(tr_all$TR_id == IDtr)] = discoor_all$disorder_region_length[which(discoor_all$DIS_id == IDdis)]
+            } 
+            if (tr_all$begin[which(tr_all$TR_id == IDtr)] >= discoor_all$start[which(discoor_all$DIS_id == IDdis)] & 
+                       discoor_all$end[which(discoor_all$DIS_id == IDdis)] >= tr_all$end[which(tr_all$TR_id == IDtr)])
+              { # or if the whole disorder region is bigger than the whole TR region. i.e. the whole TR region lies in a disorder region.
+              tr_all$TRinDis_overlap[which(tr_all$TR_id == IDtr)] = tr_all$total_repeat_length[which(tr_all$TR_id == IDtr)] 
+            } 
+          }
+        }
+
+stopCluster(cl)
+```
+
+# Venn Diagram
+```{r Data Collection}
+# source("http://www.bioconductor.org/biocLite.R")
+# biocLite("limma")
+library(limma)
+library(tidyverse)
+library(ggforce)
+set.seed((123))
+SIZEFACTOR <- 2000
+# mydata <- data.frame(A = rbinom(100, 1, 0.8),
+#                      B = rbinom(100, 1, 0.7),
+#                      C = rbinom(100, 1, 0.6)) %>%
+#                        mutate_all(., as.logical)
+# vdc <- vennCounts(mydata)
+# class(vdc) <- 'matrix'
+# df.vdc <- as.data.frame(vdc)[-1,] %>%
+#   mutate(x = c(0, 1.2, 0.8, -1.2, -0.8, 0, 0),
+#          y = c(1.2, -0.6, 0.5, -0.6, 0.5, -1, 0))
+
+df.vennCounts <- data.frame("All Proteins" = c(1,0,0,0),
+                            "TRs" = c(0,1,0,1),
+                            "Disordered Regions" = c(0,0,1,1),
+                            Counts = c(AA_proteins, AA_TRs, AA_Disorder, AA_overlap),
+                            percCounts = c(paste0(round(AA_proteins/AA_proteins*100,1), "%"),
+                                           paste0(round(AA_TRs/AA_proteins*100,1), "%"),
+                                           paste0(round(AA_Disorder/AA_proteins*100,1), "%"),
+                                           paste0(round(AA_overlap/AA_proteins*100,1), "%")),
+                            x = c(-(1.5*sqrt(AA_proteins/1.5))/(2*SIZEFACTOR) + 1.5*sqrt(AA_proteins/1.5)/(4*SIZEFACTOR), # label the rectangle at 1/4 from left
+                                  -(sqrt(AA_TRs/pi)-0.5*abs(sqrt(AA_TRs/pi)-sqrt(AA_Disorder/pi)))/SIZEFACTOR, # label the disorder circle in the center
+                                  (sqrt(AA_Disorder/pi)-0.5*abs(sqrt(AA_Disorder/pi)-sqrt(AA_TRs/pi)))/SIZEFACTOR, # label the TR circle in the center
+                                  0), # label the overlap at the origin
+                            y = c(((sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)) - 1/4*(+(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)), # label rectangle 1/4 from top
+                                  0, 
+                                  0, 
+                                  (-(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)) + 1/4*(+(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR))))
+df.venn <- data.frame(x = c(-(sqrt(AA_TRs/pi)-0.5*abs(sqrt(AA_TRs/pi)-sqrt(AA_Disorder/pi)))/SIZEFACTOR, 
+                            (sqrt(AA_Disorder/pi)-0.5*abs(sqrt(AA_Disorder/pi)-sqrt(AA_TRs/pi)))/SIZEFACTOR),
+                      y = c(0,0),
+                      labels = c("TRs", "Disordered Regions"),
+                      radius = c(sqrt(AA_TRs/pi)/SIZEFACTOR, sqrt(AA_Disorder/pi)/SIZEFACTOR))
+df.venn
+df.vennCounts
+```
+
+
+```{r Venn Diagram (percentage)}
+LINECOSMETICS <- +0.3
+NUMBERCOSMETICS <- -0.3
+p <- ggplot(df.venn) +
+  # annotate("rect", 
+  #          xmin = -(1.5*sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+  #          xmax = +(1.5*sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+  #          ymin = -(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+  #          ymax = +(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+  #          alpha = .1, 
+  #          fill = cols1[3],
+  #          color=cols1[3])+ # Rectangle
+  # color="black")+ # Rectangle
+  geom_circle(aes(x0 = x, y0 = y, r = radius, fill = labels), alpha = 0.5, size = 1, colour = 'black') +
+  coord_fixed() +
+  theme_void() +
+  theme(legend.position = 'bottom',
+        legend.text = element_text(size = 15)) +
+  scale_fill_manual(values = cols1[c(1,2,4)]) +
+  scale_colour_manual(values = cols1[c(1,2,4)], guide = FALSE) +
+  labs(fill = NULL) +
+  #annotate("text", x = df.vennCounts$x, y = df.vennCounts$y, label = df.vennCounts$Counts, size = 5)+ # absolute numbers
+  # annotate("text", x = df.vennCounts$x, y = df.vennCounts$y, label = df.vennCounts$percCounts, size = 10)+ # percentage
+  annotate("text", x = df.vennCounts$x[-1], y = df.vennCounts$y[-1], 
+           label = df.vennCounts$percCounts[-1], 
+           size = 20)+ # percentage w\o 100% label
+  annotate("segment", x = 0, xend = 0, y = (-(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR))+LINECOSMETICS + 1/4*(+(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)), yend = 0, 
+           colour = "black",
+           size = 1)+
+  guides(fill = guide_legend(reverse=TRUE))+ 
+  theme(legend.text = element_text(size = 40))
+# +  annotate("text", x =0, y= +(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)+NUMBERCOSMETICS, label = AA_proteins) # number in rectangle
+p
+if( save) {
+  ggsave(paste0(pathImages, "TR_disorder_overlap_venndiagram_perc", figureFormat), width=12, height=10, dpi = 300)
+}
+```
+The areas represent the total number of amino acids of each group. Where the rectangle shows the total amount of amino acids in all swissprot proteins, the amino acids in disordered regions and the amino acids in TR-regions and their overlap. 9.1\% of the length of protein sequences can be attributed to tandem repeated regions and 12.9\% to disordered regions. 2.5\% of the total length of protein sequences overlaps with both.
+
+```{r verify the size of the overlap}
+library(plotrix)
+plot(1:20,seq(1,20,length=20),type="n",xlab="",ylab="",main="Test draw.circle")
+draw.circle(10,10,c(9.1,2.5))
+```
+
+```{r Venn Diagram (absolute numbers)}
+LINECOSMETICS <- +0.3
+NUMBERCOSMETICS <- -0.3
+p <- ggplot(df.venn) +
+  annotate("rect", 
+           xmin = -(1.5*sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+           xmax = +(1.5*sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+           ymin = -(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+           ymax = +(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR), 
+           alpha = .1, 
+           fill = cols1[3],
+           color=cols1[3])+ # Rectangle
+  # color="black")+ # Rectangle
+  geom_circle(aes(x0 = x, y0 = y, r = radius, fill = labels), alpha = 0.5, size = 1, colour = 'black') +
+  coord_fixed() +
+  theme_void() +
+  theme(legend.position = 'bottom',
+        legend.text = element_text(size = 15)) +
+  # scale_fill_manual(values = c('cornflowerblue', 'firebrick',  'gold')) +
+  # scale_colour_manual(values = c('cornflowerblue', 'firebrick', 'gold'), guide = FALSE) +
+  scale_fill_manual(values = cols1[c(1,2,4)]) +
+  scale_colour_manual(values = cols1[c(1,2,4)], guide = FALSE) +
+  labs(fill = NULL) +
+  annotate("text", x = df.vennCounts$x, y = df.vennCounts$y, label = df.vennCounts$Counts, size = 5)+ # absolute numbers
+  # annotate("text", x = df.vennCounts$x, y = df.vennCounts$y, label = df.vennCounts$percCounts, size = 5)+ # percentage
+  annotate("segment", x = 0, xend = 0, y = (-(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR))+LINECOSMETICS + 1/4*(+(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)), yend = 0, colour = "black")+
+  guides(fill = guide_legend(reverse=TRUE))
+# +  annotate("text", x =0, y= +(sqrt(AA_proteins/1.5))/(2*SIZEFACTOR)+NUMBERCOSMETICS, label = AA_proteins) # number in rectangle
+if( save) {
+  ggsave(paste0(pathImages, "TR_disorder_overlap_venndiagram_abs", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+check this alternative: https://cran.r-project.org/web/packages/UpSetR/vignettes/basic.usage.html
+
+```{r upset data preparation (local machine)}
+# ### example data:
+# # listinputAA <- list(#AA = c("A_inProtX", "A_inProtY", "C_inProtX", "C_inProtY", "I_inProtX", "I_inProtY", "Y_inProtX", "Y_inProtY"),
+# #                                in_swissprot = c(100,123,135,123,134,156,145,167), 
+# #                                in_TR = c(0,15,0,56,0,56,0,34),
+# #                                in_Disorder = c(0,0,14,13,0,0,67,56))
+# # listinputAA
+# # fromList(listinputAA)
+# # upset(fromList(listinputAA), order.by = "freq")
+# 
+# ### Initialize a dataframe for upset
+# # listinputAA <- data.frame(ID = double(),
+# #                           # AA = c(0), # NOTE: This should be readable from something in the graphics.
+# #                           AA_in_TR = double(),
+# #                           AA_in_Disorder = double(),
+# #                           AA_in_headoverlap = double(),
+# #                           AA_in_tailoverlap = double(),
+# #                           AA_in_DisinTRoverlap = double(),
+# #                           AA_in_TRinDisoverlap = double())
+# listinputAA <- data.frame(matrix(ncol = 7, nrow = 0))
+# 
+# ### one-hot-encode each AA by it's set
+# ##original approach
+# # for each protein in sp_overlap
+#   # for each overlap-column
+#     # while i<value in overlap-column, 
+#       # append row to upsetinput-list with 1,0,0,...
+#       # i <- i+1
+#   # same for each total protein length column and the tr-length column
+# ##different approach with all the information in one data frame 
+# listinputAA
+# # register cluster
+# # cl <- makeCluster(numcores, type = "FORK")
+# # registerDoParallel(cl)
+# 
+# # foreach(Prot=iter(overlap_by_protein$ID[1:2]), .combine = 'rbind') %dopar% {
+# for (Prot in overlap_by_protein$ID[1:30]) {
+#   # print(Prot)}
+#   TR <- 0
+#   while (TR < overlap_by_protein$total_TR_length_prot[which(overlap_by_protein$ID == Prot)]) {
+#     listinputAA <- rbind(listinputAA, c(as.numeric(as.factor(Prot)),1,0,0,0,0,0))
+#     TR <- TR+1
+#   }
+#   Dis <- 0
+#   while (Dis < overlap_by_protein$total_disorder_length_prot[which(overlap_by_protein$ID == Prot)]) {
+#     listinputAA <- rbind(listinputAA, c(as.numeric(as.factor(Prot)),0,1,0,0,0,0))
+#     Dis <- Dis+1
+#   }
+#   headov <- 0
+#   while (headov < overlap_by_protein$head_overlap_prot[which(overlap_by_protein$ID == Prot)]) {
+#     listinputAA <- rbind(listinputAA, c(as.numeric(as.factor(Prot)),1,1,1,0,0,0))
+#     headov <- headov+1
+#   }
+#   tailov <- 0
+#   while (tailov < overlap_by_protein$tail_overlap_prot[which(overlap_by_protein$ID == Prot)]) {
+#     listinputAA <- rbind(listinputAA, c(as.numeric(as.factor(Prot)),1,1,0,1,0,0))
+#     tailov <- tailov+1
+#   }
+#   DisinTRov <- 0
+#   while (DisinTRov < overlap_by_protein$DisinTR_overlap_prot[which(overlap_by_protein$ID == Prot)]) {
+#     listinputAA <- rbind(listinputAA, c(as.numeric(as.factor(Prot)),1,1,0,0,1,0))
+#     DisinTRov <- DisinTRov+1
+#   }
+#   TRinDisov <- 0
+#   while (TRinDisov < overlap_by_protein$TRinDis_overlap_prot[which(overlap_by_protein$ID == Prot)]) {
+#     listinputAA <- rbind(listinputAA, c(as.numeric(as.factor(Prot)),1,1,0,0,0,1))
+#     TRinDisov <- TRinDisov+1
+#   }
+# }
+# # stopCluster(cl)
+# 
+# colnames(listinputAA) <- c("ID", "AA_in_TR", "AA_Disorder", "AA_in_headoverlap", "AA_in_tailoverlap", "AA_in_DisinTRoverlap", "AA_in_TRinDisoverlap")
+# 
+# # save listinputAA to file:
+# # write.csv(listinputAA, file = paste0(local_base_path, "/data/listinputAA.csv"))
+# 
+# # load file from calculated on cluster:
+# listinputAA <- read.csv(paste0(local_base_path, "/data/listinputAA.csv"), header = TRUE)
+# 
+# listinputAA[,-1] <- listinputAA[,-1] %>%
+#   mutate_if(is.character,as.numeric)
+# str(listinputAA)
+```
+
+```{r upset data postprocessing (after computation on HPC)}
+# load file from calculated on cluster:
+# listinputAA <- read.csv(paste0(local_base_path, "/data/listinputAA.csv"), header = TRUE)
+
+# Directory where Cluster-output from upsetr data preparation is stored
+path_upsetr_overlap_results <- paste0(local_base_path, local_path_separator, "data", local_path_separator, "upsetr_overlap_results_HPC")
+
+# Load all subsets which are in directory
+require(gtools)
+files <- mixedsort( # sort them by name in increasing order
+  list.files(path = path_upsetr_overlap_results, full.names = TRUE)) # list all files in the given directory
+
+# Concatenate all subfiles into one
+upsetr_overlap <- read.csv(files[1], header = TRUE)
+for(f in files[-1])
+  upsetr_overlap <- rbind(upsetr_overlap, read.csv(f, header = TRUE))
+upsetr_overlap <- upsetr_overlap[,-1] # remove column with rownumber
+
+# make nice and meaningful headers
+colnames(upsetr_overlap) <- c("ID", "AA in TR", "AA Disorder", "AA in headoverlap", "AA in tailoverlap", "AA in DisinTRoverlap", "AA in TRinDisoverlap")
+
+# Mutate all numbers which might be stored as characters to numeric, keep protein-IDs as characters.
+upsetr_overlap[,-1] <- upsetr_overlap[,-1] %>%
+  mutate_if(is.character,as.numeric)
+
+# Check data-type
+str(upsetr_overlap)
+```
+
+```{r UpsetR plot}
+# make plot
+png(filename = paste0(pathImages, "upsetR_all", figureFormat), width = 3000, height = 2000, res = 300)
+upset(upsetr_overlap[,-1], 
+      sets = c("AA in TR", "AA Disorder", "AA in headoverlap", "AA in tailoverlap", "AA in DisinTRoverlap", "AA in TRinDisoverlap"),
+      # scale.sets = "identity",
+      # set_size.angles = 45
+      scale.sets = "log10",
+      set_size.angles = 0)
+dev.off()
+```
+Of all amino acids in TRs, a small part overlaps with disordered regions. The most amino acids from this overlap fall in disordered regions which have a part tandemly repeated.
+
+```{r histogram showing the different overlap types (upsetr alternative)}
+# sum over all columns
+df <- overlap_by_protein[,-1] %>%
+# df <- tr_all_overlap[,c(18:22)] %>%
+  summarise_all(funs(sum))
+
+# Set names for plot
+df <- t(df)
+df <- data.frame(type = c("Total in TR", "Total in IDR", "Total Overlap", "tail-overlap", "head-overlap", "IDR-in-TR-overlap", "TR-in-IDR-overlap"),  #rownames(df)
+# df <- data.frame(type = c("tail-overlap","head-overlap", "IDR-in-TR-overlap", "TR-in-IDR-overlap", "Total Overlap"),  #rownames(df)
+                 aa_no = df[,1])
+
+p <- ggplot(df, aes(x= reorder(type, -aa_no, sum), y=aa_no))+
+  geom_col()+
+  labs(x = "Region of Counting",
+       y = "No. of Amio Acids")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p <- beautifier(p)
+p <- paper.figure(p)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p
+
+
+
+
+
+# sum over all columns
+# df <- overlap_by_protein[,-1] %>%
+df <- tr_all_overlap[,c(18:22)] %>%
+  summarise_all(funs(sum))
+
+# Set names for plot
+df <- t(df)
+# df <- data.frame(type = c("Total in TR", "Total in IDR", "Total Overlap", "tail-overlap", "head-overlap", "IDR-in-TR-overlap", "TR-in-IDR-overlap"),  #rownames(df)
+df <- data.frame(type = c("tail-overlap","head-overlap", "IDR-in-TR-overlap", "TR-in-IDR-overlap", "Total Overlap"),  #rownames(df)
+                 aa_no = df[,1])
+
+p <- ggplot(df, aes(x= reorder(type, -aa_no, sum), y=aa_no))+
+  geom_col()+
+  labs(x = "Region of Counting",
+       y = "No. of Amio Acids")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p <- beautifier(p)
+p <- paper.figure(p)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+p
+```
+Be carefull with the interpretation!!!!
+The "Total in IDR" considers only AA of IDR of proteins, containing TRs. Not overall IDR!
+"Total in TR" considers only the MSA of TR. Not the whole protein sequence of Proteins containing TRs. 
+Possible caption of first plot:
+The size of different regions within protein sequences in number of residues. The total size of the MSA of TRs is compared to the total size of IDR of TR containing proteins. 
+
+
+```{r}
+df <- data.frame(type = c("Overall protein length", 
+                          "Overall IDR length", 
+                          "Overall TR length", 
+                          "Overall IDR-TR overlap", 
+                          "TR-in-IDR overlap", 
+                          "tail-overlap", 
+                          "head-overlap", 
+                          "IDR-in-TR overlap"),
+                 aa_no = c(AA_proteins,
+                           AA_Disorder,
+                           AA_TRs,
+                           sum(tr_all_overlap$total_overlap),
+                           sum(tr_all_overlap$TRinDis_overlap),
+                           sum(tr_all_overlap$tail_overlap),
+                           sum(tr_all_overlap$head_overlap),
+                           sum(tr_all_overlap$DisinTR_overlap)))
+
+p <- ggplot(df, aes(x= reorder(type, aa_no, sum), y=aa_no))+
+  geom_col(color = "black", alpha = 0.1, width = 0.5)+
+  labs(x = "Region of Counting",
+       y = "No. of Amio Acids")+
+  coord_flip()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p
+if( save) {
+  ggsave(paste0(pathImages, "TR_disorder_overlap_all", figureFormat), width=12, height=8, dpi = 300)
+}
+
+p <- ggplot(df[1:3,], aes(x= reorder(type, aa_no, sum), y=aa_no))+
+  geom_col(color = "black", alpha = 0.1, width = 0.5)+
+  labs(x = "Region of Counting",
+       y = "No. of Amio Acids")+
+  coord_flip()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p
+if( save) {
+  ggsave(paste0(pathImages, "TR_disorder_overlap_overall", figureFormat), width=12, height=8, dpi = 300)
+}
+
+
+p <- ggplot(df[-c(1:3),], aes(x= reorder(type, aa_no, sum), y=aa_no))+
+  geom_col(color = "black", alpha = 0.1, width = 0.5)+
+  labs(x = "Region of Counting",
+       y = "No. of Amio Acids")+
+  coord_flip()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p
+if( save) {
+  ggsave(paste0(pathImages, "TR_disorder_overlap_overall_detail", figureFormat), width=12, height=8, dpi = 300)
+}
+
+p <- ggplot(df[-c(1:3),], aes(x= reorder(type, aa_no, sum), y=aa_no))+
+  geom_col(color = "black", alpha = 0.1, width = 0.5)+
+  labs(x = "Region of Counting",
+       y = "No. of Amio Acids")+
+  # geom_text(aes(label = aa_no), 
+  #           hjust=-0.5) +
+    geom_text_repel(aes(label = aa_no),
+                  size = 8, 
+                  direction = c("both"),
+                  box.padding   = 1, 
+                  point.padding = 0.1,
+                  segment.alpha = 0.5,
+                  segment.color = "white",
+                  hjust = 0.7,
+                  color = "black") +
+  coord_flip()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+p
+if( save) {
+  ggsave(paste0(pathImages, "TR_disorder_overlap_overall_detail", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+The absolute size of intrinsic disordered regions with TR-regions can be split in the four different kinds of overlap. Of overlapping regions, TRs are nested within intrisic disordered regions.  

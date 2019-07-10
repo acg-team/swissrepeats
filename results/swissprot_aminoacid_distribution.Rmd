@@ -1,0 +1,784 @@
+---
+title: 'Amino Acid distribution'
+subtitle: 'The amino acid frequency and ratio in all known proteins w/ and w/o TRs compared with the disorder propensity.'
+output:
+  html_document:
+    toc: true
+  pdf_document: default
+date: "March, 2019"
+---
+
+# Housekeeping
+```{r Housekeeping, echo=FALSE, message=FALSE, warning=FALSE}
+# Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
+setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
+source("local_config.R")
+setwd(paste0(local_base_path,"/results"))
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+
+# colour setup:
+#library(RColorBrewer); display.brewer.all() # to display available colour palettes
+colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
+getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
+cols1 <- c("#AA3939", "#AA7939", "#29506D", "#2D882D")  #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+cols2 <- c("#FFAAAA", "#FFDBAA", "#718EA4", "#88CC88") 
+cols3 <- c("#801515", "#805215", "#123652", "#116611")
+cols4 <- c("#550000", "#553100", "#042037", "#004400")
+
+# Determine Amino Acid frequency in all Proteins and write to file:
+getAAfreq <- FALSE
+```
+
+# Data Loading 
+```{r Data Loading, echo=FALSE, eval=TRUE}
+tr_path = paste0(local_path_separator, "results", local_path_separator,"tr_annotations", local_path_separator, "tr_annotations.csv")
+tr_all = load_tr_annotations(tr_path)
+
+sp_path = paste0(local_path_separator, "data", local_path_separator, "swissprot_annotations.tsv")
+sp_all = load_swissprot(sp_path, tr_all)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+# Amino Acid Frequency Determination 
+aa-freq determination:
+```{r}
+if(getAAfreq){
+  
+  ## Count all AAs in all TRs
+  # aa_freq <- mclapply(tr_all_sp$MSA,
+  #                     function(i){alphabetFrequency(AAString(i))},
+  #                     mc.cores = numcores)
+  aa_freq <- alphabetFrequency(AAStringSet(tr_all_sp$MSA)) # in the other column, are the spaces in between the TRs
+  aa_freq <- colSums(aa_freq)
+  # aa_freq <-  Reduce(`+`, aa_freq)
+  
+  dfTR  <- as.data.frame(aa_freq)
+  dfTR$aa <- rownames(dfTR)
+  # Remove NAs (*,-,.,+)
+  # dfTR <- subset(dfTR, !(dfTR$aa %in% aa_ignore)) #TODO add 
+  # Calculate aa composition ratio in TR
+  for (i in 1:nrow(dfTR)){
+    dfTR$aa_ratio_tr[i] <- round(dfTR$aa_freq[i]/sum(dfTR$aa_freq), 3)
+  }
+  colnames(dfTR) <- c("aa_freq_tr", "aa", "aa_ratio_tr")
+  
+  
+  ## Count all AAs in all swissprots
+  # Read gzip-compressed FASTA file:
+  aa_SP <- readAAStringSet(paste0(local_base_path, local_path_separator, "data", local_path_separator, "uniprot_sprot.fasta.gz"))
+  # Count all AA in each protein
+  # dfSP <- mclapply(aa_SP, 
+  #                  alphabetFrequency, 
+  #                  mc.cores = numcores) # NOTE: Takes few minutes
+  dfSP <- alphabetFrequency(aa_SP)
+  # sum AA frequency over all proteins
+  # dfSP <- Reduce(`+`, dfSP)
+  dfSP <- colSums(dfSP)
+  
+  dfSP  <- as.data.frame(dfSP)
+  dfSP$aa <- rownames(dfSP)
+  colnames(dfSP) <- c("aa_freq_sp", "aa") # For some reason this is needed here for subset below...
+  # Remove NAs (*,-,.,+)
+  # dfSP <- subset(dfSP, !(dfSP[, 2] %in% aa_ignore))
+  # Calculate aa composition ratio in Proteinsequences
+  for (i in 1:nrow(dfSP)){
+    dfSP[i,3] <- round(dfSP[i, 1]/sum(dfSP[1]), 4)
+  }
+  colnames(dfSP) <- c("aa_freq_sp", "aa", "aa_ratio_sp")
+  # Check to aa composition given in statistics from Swissprot proteins (https://web.expasy.org/docs/relnotes/relstat.html)
+  # dfSP$aa_ratio_sp_stats <- c(8.25, 5.53, 4.05, 5.46, 1.38, 3.93, 6.73, 7.07, 2.27, 5.92, 9.65, 5.81, 2.41, 3.86, 4.73, 6.62, 5.35, 1.09, 2.92, 6.86, NA, NA, 0, 0, 0)/100
+  
+  ## Count all AAs in all Swissprot w/o TRs
+  # select all AAs w/o TRs
+  aa_SP <- as.data.frame(aa_SP)
+  temp <- mclapply(row.names(aa_SP),
+                   function(i){
+                     strsplit(i, split = "|", fixed = TRUE)})
+  temp <- unlist(temp)
+  aa_SP$ID <- temp[seq(from = 2, to = length(temp), by=3)]
+  
+  
+  dfnegSP <- aa_SP[which(aa_SP$ID %!in% tr_all$ID),]
+  
+  # Count all AA in each protein
+  # dfnegSP <- mclapply(dfnegSP$x, 
+  #                     function(i){alphabetFrequency(AAString(i))},
+  #                     mc.cores = numcores)
+  dfnegSP <- alphabetFrequency(AAStringSet(dfnegSP$x))
+  # sum AA frequency over all proteins
+  # dfnegSP <- Reduce(`+`, dfnegSP)
+  dfnegSP <- colSums(dfnegSP)
+  
+  dfnegSP  <- as.data.frame(dfnegSP)
+  dfnegSP$aa <- rownames(dfnegSP)
+  colnames(dfnegSP) <- c("aa_freq_sp", "aa") # For some reason this is needed here for subset below...
+  # Remove NAs (*,-,.,+)
+  # dfnegSP <- subset(dfnegSP, !(dfnegSP[,2] %in% aa_ignore))
+  # Calculate aa composition ratio in Proteinsequences
+  for (i in 1:nrow(dfnegSP)){
+    dfnegSP[i,3] <- round(dfnegSP[i, 1]/sum(dfnegSP[1]), 4)
+  }
+  colnames(dfnegSP) <- c("aa_freq_negsp", "aa", "aa_ratio_negsp")
+  
+  
+  ## Combine all data toghether
+  # Combine dfSP and dfTR (AA frequency distribution within TRs)
+  df <- merge(x = dfSP, y=dfTR, by= "aa")
+  # add dfnegSP
+  # df <- cbind(df, dfnegSP$aa_freq_negsp, dfnegSP$aa_ratio_negsp)
+  df <- merge(x = df, y=dfnegSP, by="aa")
+  # colnames(df) <- c( "aa", "aa_freq_sp", "aa_ratio_sp", "aa_freq_tr", "aa_ratio_tr", "aa_freq_negsp", "aa_ratio_negsp")
+  # Sort AA according to their disorder promoting potential
+  df <- df[match(aa_order_promoting_to_disorder_promoting, df$aa),]
+  
+  # save for later use
+  write.csv(df, file = paste0(local_base_path, local_path_separator, "data", local_path_separator, "aa_count.csv"), row.names = df$aa)
+}
+
+# load AA counts
+df <- read.csv(paste0(local_base_path, local_path_separator, "data", local_path_separator, "aa_count.csv"), header = TRUE)
+df <- df[,-1]
+# Encode the order of the AA as increasing factor
+df$aafac <- seq(1, length(df$aa))
+# Add the disorder propensity from Uversky paper
+df$disorderpropensity <- c(0.00, 0.004, 0.090, 0.113, 0.117, 0.195, 0.259, 0.263, 0.285, 0.291, 0.394, 0.401, 0.407, 0.437, 0.450, 0.588,0.665,0.713, 0.781,1.000, NA, NA, NA, NA, NA)
+# calculate disorder propensity manually
+#TODO
+# remove all AA for which we don't have disorderpropensity values
+df <- df %>%
+  drop_na()
+
+## from wide to long format
+dfRatio.long <- df %>%
+  gather(ratio_source, aa_ratio, -c("aa", "aa_freq_sp", "aa_freq_tr", "aa_freq_negsp", "aafac", "disorderpropensity"))
+# change labelling
+dfRatio.long$ratio_source <- replace(dfRatio.long$ratio_source, dfRatio.long$ratio_source =="aa_ratio_sp", "all Swissprots")
+dfRatio.long$ratio_source <- replace(dfRatio.long$ratio_source, dfRatio.long$ratio_source =="aa_ratio_tr", "only TRs")
+dfRatio.long$ratio_source <- replace(dfRatio.long$ratio_source, dfRatio.long$ratio_source =="aa_ratio_negsp", "all Swissprots w/o TRs")
+dfRatio.long <- dfRatio.long[,-c(2:4)]
+
+dfFreq.long <- df %>%
+  gather(freq_source, aa_freq, -c("aa", "aa_ratio_sp", "aa_ratio_tr", "aa_ratio_negsp", "aafac", "disorderpropensity"))
+# change labelling
+dfFreq.long$freq_source <- replace(dfFreq.long$freq_source, dfFreq.long$freq_source =="aa_freq_sp", "all Swissprots")
+dfFreq.long$freq_source <- replace(dfFreq.long$freq_source, dfFreq.long$freq_source =="aa_freq_tr", "only TRs")
+dfFreq.long$freq_source <- replace(dfFreq.long$freq_source, dfFreq.long$freq_source =="aa_freq_negsp", "all Swissprots w/o TRs")
+dfFreq.long <- dfFreq.long[, -c(2:4)]
+```
+# AA Frequency
+### Frequency of AAs in TRs vs Background frequency
+```{r}
+p <- ggplot(df, aes(x= aa_freq_sp, y = aa_freq_tr, size = disorderpropensity))+
+  geom_point()+
+  labs(x= "AA Background Frequency",
+       y = "AA Frequency in TRs")+
+  guides(size=guide_legend(title="Disorderpropensity"))+
+  theme_minimal()
+p <- beautifier(p, x.axis.text.angle = 0)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p
+if( save) {
+  ggsave(paste0(pathImages, "AA_frequency_TR_vs_background", figureFormat), width=12, height=8, dpi = 300)
+}
+
+p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, color = disorderpropensity))+
+  geom_point(size = 5)+
+  geom_abline(intercept=0, slope=mean(df$aa_ratio_tr)/mean(df$aa_ratio_sp), colour="grey")+
+  geom_text_repel(aes(label = aa),
+                  size = 8,
+                  direction = c("both"),
+                  box.padding   = 1,
+                  point.padding = 0.1,
+                  segment.alpha = 0.5,
+                  hjust = 0.7,
+                  color = "black") +
+  labs(x= "AA ratio overall",
+       y = "AA ratio in TRs")+
+  guides(size=guide_legend(title="Disorderpropensity"))+
+  scale_color_continuous(low = "#F9C73F", high = "#A21212", 
+                         name = "Disorderpropensity")+
+  theme_minimal()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 1.1)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratio_TR_vs_background", figureFormat), width=12, height=8, dpi = 300)
+}
+
+# 3D plot
+library(rgl)
+library(rayshader)
+p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, color = disorderpropensity))+
+  geom_point(size = 5)+
+  labs(x= "AA ratio overall",
+       y = "AA ratio in TRs")+
+  guides(size=guide_legend(title="Disorderpropensity"))+
+  scale_color_continuous(low = "#F9C73F", high = "#A21212", 
+                         name = "Disorderpropensity")+
+  theme_minimal()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 1.1)+
+  theme(legend.position="bottom", legend.box = "horizontal")
+plot_gg(p, width = 5, height = 4, scale = 300, multicore = TRUE, windowsize = c(1000,800))
+render_camera(theta = 320, phi = 65)
+text(list(x=df$aa_ratio_sp, y=df$aa_ratio_tr, z=df$disorderpropensity), labels = df$aa)
+text3d(x = 0.05, y=-0.01, z = 0, texts = "test")
+render_snapshot(paste0(pathImages, "AA_ratio_TR_vs_background_3D", figureFormat))
+
+devtools::install_github("AckerDWM/gg3D")
+library(gg3D)
+p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, z= disorderpropensity, color = disorderpropensity))+
+  geom_point(size = 5)+
+  geom_text_repel(aes(label = aa),
+                  size = 8,
+                  direction = c("both"),
+                  box.padding   = 1,
+                  point.padding = 0.1,
+                  segment.alpha = 0.5,
+                  hjust = 0.7,
+                  color = "black") +
+  labs(x= "AA ratio overall",
+       y = "AA ratio in TRs")+
+  guides(size=guide_legend(title="Disorderpropensity"))+
+  scale_color_continuous(low = "#F9C73F", high = "#A21212", 
+                         name = "Disorderpropensity")+
+  theme_minimal()
+p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 1.1)+
+  theme(legend.position="bottom", legend.box = "horizontal")
+p + axes_3D(theta = 320, phi = 65) +
+  stat_3D(theta = 320, phi = 60)
+
+#check this for proper labelinghttp://www.sthda.com/english/wiki/impressive-package-for-3d-and-4d-graph-r-software-and-data-visualization
+
+p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, size = disorderpropensity, label = aa))+
+  geom_point()+
+  geom_text(aes(label = aa, size = disorderpropensity*0.25), color = "white")+
+  labs(x= "AA ratio overall",
+       y = "AA ratio in TRs")+
+  guides(size=guide_legend(title="Disorderpropensity"))
+p <- beautifier(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p <- beautifier(p, x.axis.text.angle = 0)
+p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
+p
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratio_TR_vs_background_labeled", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+### Frequency plots: Explicit number of AA occuring in the specific region (either TR or the whole protein)
+AA frequency in TR region vs. disorder propensity
+```{r}
+# labelling good, geom_smooth bad
+p1 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_freq_tr))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_freq_tr), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency in TR")+
+  theme_minimal()
+p1 <- beautifier(p1, x.axis.text.angle = 0)
+p1 <- paper.figure(p1, x.axis.text.angle = 0)
+p1
+
+##### 
+# # labelling bad, geom_smooth good
+# p1 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_tr))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm")+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in TR")+
+#   theme_minimal()
+# p1 <- beautifier(p1)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+# p1
+# 
+# # other approach with abline
+# p1 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_tr))+
+#   geom_point()+
+#   scale_x_continuous(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   geom_abline(intercept = coefficients(model.lm.tr)[1], slope = coefficients(model.lm.tr)[2])+
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in TR")+
+#   theme_minimal()
+# p1 <- beautifier(p1)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1, vjust = 0.5))
+# p1
+# 
+# # other approach with geom_stats
+# p1 <- ggplot(df, aes(x = as.factor(disorderpropensity), y = aa_freq_tr))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm", aes(group = "C"))+
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in TR")+
+#   theme_minimal()
+# p1 <- beautifier(p1)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1, vjust = 0.5))
+# p1
+#####
+if( save) {
+  ggsave(paste0(pathImages, "AA_frequencyTR_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+```{r correlation analysis}
+df$aa_freq_tr
+rank(df$aa_freq_tr)
+
+df$disorderpropensity
+rank(df$disorderpropensity)
+
+cor.test(df$aa_freq_tr, df$disorderpropensity, method = "spearman")
+```
+Ranked AA according their disorderpropensity show a strong positive correlation with their appeareance in TRs (rho = 0.71, p-value = <0.05).
+
+AA frequency in all Swissprots vs. disorder propensity
+```{r}
+# labelling good, geom_smooth bad
+p2 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_freq_sp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_freq_sp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency in all Swissprot")+
+  theme_minimal()
+p2 <- beautifier(p2, x.axis.text.angle = 0)
+p2 <- paper.figure(p2, x.axis.text.angle = 0)
+p2
+
+#####
+# # labelling bad, geom_smooth good
+# p2 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_sp))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm")+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in all Swissprot")+
+#   theme_minimal()
+# p2 <- beautifier(p2)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+# p2
+######
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_frequencySP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+```{r correlation analysis}
+df$aa_freq_tr
+rank(df$aa_freq_tr)
+
+df$disorderpropensity
+rank(df$disorderpropensity)
+
+cor.test(df$aa_freq_sp, df$disorderpropensity, method = "spearman")
+cor.test(df$aa_freq_sp, df$disorderpropensity, method = "spearman", alternative = "greater")
+```
+Ranked AA according their disorderpropensity show little correlation with their appeareance in all proteins of swissprot (rho = 0.44, p-value = 0.053).
+
+
+AA frequency in all Swissprot w/o TRs vs. disorder propensity
+```{r}
+model.lm.negsp <- lm(aa_freq_negsp ~ disorderpropensity, data = df)
+summary(model.lm.negsp)
+
+# labelling good, geom_smooth bad
+p3 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_freq_negsp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_freq_negsp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency in all Swissprot w/o TRs")+
+  theme_minimal()
+p3 <- beautifier(p3, x.axis.text.angle = 0)
+p3 <- paper.figure(p3, x.axis.text.angle = 0)
+p3
+
+#####
+# # labelling bad, geom_smooth good
+# p3 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_negsp))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm")+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in all Swissprot w/o TRs")+
+#   theme_minimal()
+# p3 <- beautifier(p3)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+# p3
+#####
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_frequencynegSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+
+model <- lm(dfFreq.long$aa_freq~dfFreq.long$aafac, dfFreq.long[which(dfFreq.long$aa_freq > 10000),])
+p <- ggplot(dfFreq.long, aes(x = dfFreq.long$aa, y = dfFreq.long$aa_freq))+
+  facet_wrap(~freq_source, scales = "free")+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfFreq.long$freq_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))+
+  scale_color_manual(values = cols1,
+                     name  ="AA sources",
+                     breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                     labels=c("all Swissprots", "only TRs")) +
+  scale_fill_manual(values = cols1,
+                    name  ="AA sources",
+                    breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                    labels=c("all Swissprots", "only TRs"))
+p <- paper.figure(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p
+if( save) {
+  ggsave(paste0(pathImages, "AA_frequency_facet", figureFormat), width=18, height=13, dpi = 300)
+}
+
+#####
+# # model <- lm(dfFreq.long$aa_freq~dfFreq.long$aa, dfFreq.long)
+# # model <- lm(dfFreq.long$aa_freq~dfFreq.long$aafac, dfFreq.long)
+# model <- lm(df$aa_freq_tr ~ df$disorderpropensity, data = df) # This works for "all swissprots", however not for the others. Check in single plots first!
+# summary(lm(aa_freq_tr ~ disorderpropensity, data = df))
+# p <- ggplot(dfFreq.long, aes(x = dfFreq.long$aa, y = dfFreq.long$aa_freq))+
+#   facet_wrap(~freq_source, scales = "free")+
+#   geom_point()+
+#   scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+#   # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+#   # stat_smooth(method = "lm", aes(group = dfFreq.long$freq_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency")+
+#   theme_minimal()
+# p <- beautifier(p)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))+
+#   scale_color_manual(values = cols1,
+#                       name  ="AA sources",
+#                       breaks=c("aa_ratio_sp","aa_ratio_tr"),
+#                       labels=c("all Swissprots", "only TRs")) +
+#   scale_fill_manual(values = cols1,
+#                     name  ="AA sources",
+#                       breaks=c("aa_ratio_sp","aa_ratio_tr"),
+#                       labels=c("all Swissprots", "only TRs"))
+# p
+```
+
+```{r correlation analysis}
+df$aa_freq_tr
+rank(df$aa_freq_tr)
+
+df$disorderpropensity
+rank(df$disorderpropensity)
+
+cor.test(df$aa_freq_negsp, df$disorderpropensity, method = "spearman", alternative = "two.sided")
+cor.test(df$aa_freq_negsp, df$disorderpropensity, method = "spearman", alternative = "greater")
+cor.test(df$aa_freq_negsp, df$disorderpropensity, method = "spearman", alternative = "less")
+```
+Ranked AA according their disorderpropensity show no significant correlation with their appeareance proteins without TRs (rho =-0.10, p-value = >0.05).
+
+The frequency of each AA (ordered by their decreasing order-promoting potential (top: ordered, bottom: disordered)) from all TR containing proteins.
+Disorder promoting residues occur more frequently in TR than oder promoting.
+
+From Uversky2013: 
+In fact, in comparison with ordered proteins, IDPs/IDPRs are characterized by noticeable biases in their amino acid compositions, containing less of so-called “order-promoting” residues (cysteine, tryptophan, isoleucine, tyrosine, phenylalanine, leucine, histidine, valine, asparagines and methionine, which are mostly hydrophobic residues which are commonly found within the hydrophobic cores of foldable proteins) and more of “disorder-promoting” residues (lysine, glutamine, serine, glutamic acid and proline, which are mostly polar and charged residues, which are typically located at the surface of foldable proteins)
+
+
+INTERPRETATION: 
+Amino acids ordered according to their increasing disorder propensity (form uversky paper) show a significant linear relationship to their abundance in TR regions (p-value <0.05 and rho = 0.71). However they don't show a significant linear relationship over all proteins in SwissProtKB (p-value = 0.53, rho = 0.44) and neither over all proteins which don't have TRs (p-value > 0.05, rho=-0.10) (two-sided)
+
+# AA Ratio 
+
+### Ratio plots: Ratio of #AAx/sum(of all AA in the protein or TR)
+AA ratio in TR region vs. disorder propensity
+```{r AA ratio in TR region vs. disorder propensity}
+# model.lm.tr <- lm(aa_ratio_tr ~ disorderpropensity, data = df)
+# summary(model.lm.tr)
+
+# labelling good, geom_smooth bad
+p1 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_tr))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_tr), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in TR")+
+  theme_minimal()
+p1 <- beautifier(p1)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p1 <- paper.figure(p1)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p1
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratioTR_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+```{r correlation analysis: AA ratio in TR region vs. disorder propensity}
+cor.test(df$aa_ratio_tr, df$disorderpropensity, method = "spearman")
+print(paste("rho^2:", round(cor.test(df$aa_ratio_tr, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
+```
+Some AAs have the same ratio value. Therefore, spearman test creates ties of the rank from the mean of the three same values.
+That's where the warning is coming from. 
+
+AA ratio in all Swissprots vs. disorder propensity
+```{r}
+# model.lm.sp <- lm(aa_ratio_sp ~ disorderpropensity, data = df)
+# summary(model.lm.sp)
+
+# labelling good, geom_smooth bad
+p2 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_sp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_sp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in all Swissprot")+
+  theme_minimal()
+p2 <- beautifier(p2)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p2 <- paper.figure(p2)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p2
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratioSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+```{r correlation analysis: AA ratio in all Swissprots vs. disorder propensity}
+cor.test(df$aa_ratio_sp, df$disorderpropensity, method = "spearman")
+print(paste("rho^2:", round(cor.test(df$aa_ratio_sp, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
+```
+
+AA ratio in all Swissprot w/o TRs vs. disorder propensity
+```{r}
+model.lm.negsp <- lm(aa_ratio_negsp ~ disorderpropensity, data = df)
+summary(model.lm.negsp)
+
+# labelling good, geom_smooth bad
+p3 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_negsp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+```{r AA ratio in TR region vs. disorder propensity}
+# model.lm.tr <- lm(aa_ratio_tr ~ disorderpropensity, data = df)
+# summary(model.lm.tr)
+
+# labelling good, geom_smooth bad
+p1 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_tr))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_tr), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in TR")+
+  theme_minimal()
+p1 <- beautifier(p1)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p1 <- paper.figure(p1)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p1
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratioTR_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+```{r correlation analysis: AA ratio in TR region vs. disorder propensity}
+cor.test(df$aa_ratio_tr, df$disorderpropensity, method = "spearman")
+print(paste("rho^2:", round(cor.test(df$aa_ratio_tr, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
+```
+Some AAs have the same ratio value. Therefore, spearman test creates ties of the rank from the mean of the three same values.
+That's where the warning is coming from. 
+
+AA ratio in all Swissprots vs. disorder propensity
+```{r}
+# model.lm.sp <- lm(aa_ratio_sp ~ disorderpropensity, data = df)
+# summary(model.lm.sp)
+
+# labelling good, geom_smooth bad
+p2 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_sp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_sp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in all Swissprot")+
+  theme_minimal()
+p2 <- beautifier(p2)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p2 <- paper.figure(p2)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p2
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratioSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+```{r correlation analysis: AA ratio in all Swissprots vs. disorder propensity}
+cor.test(df$aa_ratio_sp, df$disorderpropensity, method = "spearman")
+print(paste("rho^2:", round(cor.test(df$aa_ratio_sp, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
+```
+
+AA ratio in all Swissprot w/o TRs vs. disorder propensity
+```{r}
+model.lm.negsp <- lm(aa_ratio_negsp ~ disorderpropensity, data = df)
+summary(model.lm.negsp)
+
+# labelling good, geom_smooth bad
+p3 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_negsp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                   breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_negsp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in all Swissprot w/o TRs")+
+  theme_minimal()
+p3 <- beautifier(p3)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p3 <- paper.figure(p3)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p3
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_rationegSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+
+model <- lm(dfRatio.long$aa_ratio~dfRatio.long$aafac, dfRatio.long)
+p <- ggplot(dfRatio.long, aes(x = dfRatio.long$aa, y = dfRatio.long$aa_ratio))+
+  facet_wrap(~ratio_source, scales = "free")+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfRatio.long$ratio_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Ratio")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))+
+  scale_color_manual(values = cols1,
+                     name  ="AA sources",
+                     breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                     labels=c("all Swissprots", "only TRs")) +
+  scale_fill_manual(values = cols1,
+                    name  ="AA sources",
+                    breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                    labels=c("all Swissprots", "only TRs"))
+p <- paper.figure(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratio_facet", figureFormat), width=18, height=13, dpi = 300)
+}
+
+p5 <- ggplot(dfRatio.long, aes(x = dfRatio.long$aa, y = dfRatio.long$aa_ratio, color = dfRatio.long$ratio_source))+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfRatio.long$ratio_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Ratio")+
+  theme_minimal()
+p5 <- beautifier(p5)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1),
+        legend.position = "right")+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_negsp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in all Swissprot w/o TRs")+
+  theme_minimal()
+p3 <- beautifier(p3)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p3 <- paper.figure(p3)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p3
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_rationegSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+
+model <- lm(dfRatio.long$aa_ratio~dfRatio.long$aafac, dfRatio.long)
+p <- ggplot(dfRatio.long, aes(x = dfRatio.long$aa, y = dfRatio.long$aa_ratio))+
+  facet_wrap(~ratio_source, scales = "free")+
+  geom_point(size=5)+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfRatio.long$ratio_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Ratio")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))+
+  scale_color_manual(values = cols1,
+                     name  ="AA sources",
+                     breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                     labels=c("all Swissprots", "only TRs")) +
+  scale_fill_manual(values = cols1,
+                    name  ="AA sources",
+                    breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                    labels=c("all Swissprots", "only TRs"))
+p <- paper.figure(p, x.axis.text.size = 18)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratio_facet", figureFormat), width=18, height=13, dpi = 300)
+}
+
+p5 <- ggplot(dfRatio.long, aes(x = dfRatio.long$aa, y = dfRatio.long$aa_ratio, color = dfRatio.long$ratio_source))+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfRatio.long$ratio_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Ratio")+
+  theme_minimal()
+p5 <- beautifier(p5)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1),
+        legend.position = "right")+
+  scale_color_manual(values = cols1,
+                     name = "Source")
+p5 <- paper.figure(p5)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5))
+p5
+
+if( save) {
+  ggsave(paste0(pathImages, "AA_ratio_scatterall", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+```{r correlation analysis: AA ratio in all Swissprot w/o TRs vs. disorder propensity}
+cor.test(df$aa_ratio_negsp, df$disorderpropensity, method = "spearman")
+print(paste("rho^2:", round(cor.test(df$aa_ratio_negsp, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
+```

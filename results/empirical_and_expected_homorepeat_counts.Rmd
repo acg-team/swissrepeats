@@ -1,0 +1,293 @@
+---
+title: "Empirical and expected homorepeat counts in Swiss-Prot"
+date: "January 14, 2016"
+output: html_document
+---
+
+
+```{r include=FALSE}
+rm(list = ls(all = TRUE))
+gc()
+setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
+source("helpers.R")
+```
+
+
+```{r, echo=FALSE, eval=TRUE}
+aa_ignore = c("B", "X", "Z", "O", "U")
+homo_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/swissprot.csv"
+homo_all = load_homorepeat_data(homo_path, aa_ignore, "all")
+
+homo_disorder_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_regions_iupl.csv"
+homo_d_all = load_homorepeat_data(homo_disorder_path, aa_ignore , "disorder")
+
+homo_order_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_regions_iupl_inverted.csv"
+homo_o_all = load_homorepeat_data(homo_order_path, aa_ignore, "order")
+
+homo = rbind(homo_all, homo_d_all, homo_o_all)
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/swissprot.csv"
+homo_exp_all = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "all")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus.csv"
+homo_exp_d = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "disorder")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus_inverse.csv"
+homo_exp_o = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "order")
+
+homo_exp = rbind(homo_exp_all, homo_exp_d, homo_exp_o)
+
+# Needed to add \n to .csv files for R to read them properly
+# aa_counts_eukaryota_disorder_path = "results/swiss_prot_aa_frequencies/swissprot_disorder_kingdomwise/Eukaryota.csv"
+aa_counts_eukaryota_disorder_path = "/results/amino_acid_frequencies/Eukaryota.csv"
+aa_counts_eukaryota_disorder = load_amino_acid_counts(aa_counts_eukaryota_disorder_path, "disordered", "Eukaryota", aa_ignore)
+# aa_counts_eukaryota_order_path = "results/swiss_prot_aa_frequencies/swissprot_disorder_inverse_kingdomwise/Eukaryota.csv"
+aa_counts_eukaryota_order_path = "/results/amino_acid_frequencies/Eukaryota.csv"
+aa_counts_eukaryota_order = load_amino_acid_counts(aa_counts_eukaryota_order_path, "ordered", "Eukaryota", aa_ignore)
+# aa_counts_bacteria_disorder_path = "results/swiss_prot_aa_frequencies/swissprot_disorder_kingdomwise/Bacteria.csv"
+aa_counts_bacteria_disorder_path = "/results/amino_acid_frequencies/Bacteria.csv"
+aa_counts_bacteria_disorder = load_amino_acid_counts(aa_counts_bacteria_disorder_path, "disordered", "Bacteria", aa_ignore)
+# aa_counts_bacteria_order_path = "results/swiss_prot_aa_frequencies/swissprot_disorder_inverse_kingdomwise/Bacteria.csv"
+aa_counts_bacteria_order_path = "/results/amino_acid_frequencies/Bacteria.csv"
+aa_counts_bacteria_order = load_amino_acid_counts(aa_counts_bacteria_order_path, "ordered", "Bacteria", aa_ignore)
+
+aa_counts_eukaryota = compare_amino_acid_counts(aa_counts_eukaryota_order, aa_counts_eukaryota_disorder)
+aa_counts_bacteria = compare_amino_acid_counts(aa_counts_bacteria_order, aa_counts_bacteria_disorder)
+
+aa_counts = rbind(aa_counts_eukaryota, aa_counts_bacteria)
+```
+
+Sidenote: "Sometimes, the specific identity of an amino acid cannot be determined unambiguously. Certain protein sequencing techniques do not distinguish among certain pairs. Thus, these codes are used:
+
+    Asx (B) is "asparagine or aspartic acid"
+    Glx (Z) is "glutamic acid or glutamine"
+    Xle (J) is "leucine or isoleucine"
+
+In addition, the symbol X is used to indicate an amino acid that is completely unidentified." [From Wiki](https://en.wikipedia.org/wiki/Proteinogenic_amino_acid)
+
+
+### Show amino acid frequencies in ordered and disordered regions
+TODO: Where is the NA value coming from?
+```{r}
+aa_counts[which(is.na(aa_counts$aa)),]
+aa_counts <- aa_counts[which(!is.na(aa_counts$aa)),]
+
+```
+Don't know where they're from, but since there only very few, let's remove them.
+
+```{r, echo=FALSE, eval=TRUE}
+p = ggplot(aa_counts, aes(x=frequency, y=aa, colour=Superkingdom, size=total_frequency)) + 
+  geom_point()+
+  facet_wrap(~ type, scales = "free")
+beautifier(p)
+
+aa_counts_tmp = subset(aa_counts, type=="ordered")
+p = ggplot(aa_counts_tmp, aes(x=log10relative_frequency_ordered_divided_by_disordered, y=aa, colour=Superkingdom, size=total_frequency)) + geom_point()
+p = p + facet_wrap(~ type, scales = "free")
+beautifier(p)
+```
+The frequency of each AA (ordered by their decreasing disorder-promoting potential (top: ordered, bottom: disordered)) from ordered and disordered regions of Bacteria and Eukaryota.
+From Uversky2013: 
+In fact, in comparison with ordered pro-
+teins, IDPs/IDPRs are characterized by noticeable biases in their 
+amino acid compositions, containing less of so-called 
+“order-promoting” residues (cysteine, tryptophan, isoleucine, 
+tyrosine, phenylalanine, leucine, histidine, valine, asparagines 
+and methionine, which are mostly hydrophobic residues which 
+are commonly found within the hydrophobic cores of foldable 
+proteins) and more of “disorder-promoting” residues (lysine, 
+glutamine, serine, glutamic acid and proline, which are mostly 
+polar and charged residues, which are typically located at the 
+surface of foldable proteins)
+
+### Show average amino acid frequencies in ordered and disordered regions per kingdom:
+```{r, echo=FALSE, eval=TRUE}
+aa_frequency_summary = ddply(aa_counts, .(Superkingdom, type), summarize, std_frequency = sd(frequency))
+aa_frequency_summary
+```
+
+
+### Calculate the expected ratio of homorepeats in ordered and disordered regions, given their empirical amino acid distributions. Compare this theoretical result to the above data.
+
+```{r, echo=FALSE, eval=TRUE}
+## Test whether empirical and expected numbers are sensible. 
+
+# "Release 2015_11 of 11-Nov-15 of UniProtKB/Swiss-Prot contains 549832 sequence entries,comprising 196078138 amino acids abstracted from 240597 references. "
+# ftp://ftp.uniprot.org/pub/databases/uniprot/previous_releases/release-2015_11/knowledgebase/UniProtKB_SwissProt-relstat.html
+
+
+# The expected and empirical values need to add up to approximately the same value:
+
+# For the entire of Swiss-Prot, this value is the total number of amino acids in Swiss-Prot, 196078138:
+# Counting the seq length in Swiss-Prot (Retrieved with BioPython): 196219159 - currently, cannot explain difference to official numbers.
+# In Swiss-Prot annotations for aa counts: 196219157
+sum(homo_all[homo_all$type=="expected","repeat_region_length"]) 
+sum(homo_all[homo_all$type=="empirical","repeat_region_length"])
+
+# At current, we ignore ~60 sequence, were disorder annotations (MobiDB) are only available for outdated Swiss-Prot sequences. Therefore, character counts don't add up to the total Swiss-Prot length.
+sum(homo_d_all[homo_d_all$type=="expected","repeat_region_length"]) 
+sum(homo_d_all[homo_d_all$type=="empirical","repeat_region_length"]) 
+
+sum(homo_o_all[homo_o_all$type=="expected","repeat_region_length"]) 
+sum(homo_o_all[homo_o_all$type=="empirical","repeat_region_length"]) 
+
+## Do empirical and expected numbers add up to the same value?
+# -> Not yet, however to a low margin. Needs checking.
+## Do numbers for order and disorder add up to the total of Swiss-Prot?
+# -> Not yet, as we ignore a couple of dozen sequence lacking current disorder annotations
+```
+
+
+#### Absolute homorepeat counts
+```{r, echo=FALSE, eval=TRUE}
+homo_q = subset(homo_all, aa=="Q")
+p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=type)) + geom_point()
+p = p + facet_wrap(~ Kingdom, scales = "free")
+p = p + ggtitle('Amino acid: Q')
+beautifier(p)
+
+homo_q = subset(homo_all, aa %in% c("N", "Q", "S", "E") & type == "empirical")
+p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=aa)) + geom_point()
+p = p + facet_wrap(~ Kingdom, scales = "free")
+p = p + ggtitle('Empirical data')
+beautifier(p)
+
+
+show_homorepeat_counts <- function(data, kingdom, nmin, nmax){
+  homo_sub = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax)
+  p = ggplot(homo_sub, aes(x=n, y=log10_count_rounded, colour=type)) + geom_point(size=1.5)
+  p = p + facet_wrap(~ aa)
+  beautifier(p)
+}
+
+show_homorepeat_counts(homo_all, "Eukaryota", 1, 50)
+show_homorepeat_counts(homo_all, "Bacteria", 1, 50)
+show_homorepeat_counts(homo_all, "Viruses", 1, 50)
+show_homorepeat_counts(homo_all, "Archaea", 1, 30)
+```
+
+#### Empirical homorepeat counts normalized by expected homorepeat counts.
+```{r, echo=FALSE, eval=TRUE}
+# This solution ONLY works, if homo is correctly ordered. Otherwise, find a smarter split/divide/merge method!
+homo_expected = subset(homo, type == "expected")
+homo_empirical = subset(homo, type == "empirical")
+
+homo_empirical$relative_count = homo_empirical$count / homo_expected$count
+homo_empirical$log10relative_count = log10(homo_empirical$relative_count)
+homo_empirical = subset(homo_empirical)
+
+show_empirical_homorepeat_counts_relative_to_expected <- function(data, kingdom, nmin, nmax){
+  homo_empirical = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax & set != "all")
+  homo_empirical = homo_empirical[complete.cases(homo_empirical),]
+  p = ggplot(homo_empirical, aes(x=n, y=log10relative_count, colour=set)) + geom_point()
+  p = p + facet_wrap(~ aa)
+  p = p + scale_x_continuous(breaks = (seq(nmin, nmax, by = round((nmax/max(nmin,1))/5))))
+  p = p + geom_hline(yintercept=0)
+  beautifier(p)
+}
+
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Eukaryota", 0, 50)
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Bacteria", 0, 50)
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Viruses", 0, 50)
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Archaea", 0, 50)
+
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Eukaryota", 0, 10)
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Bacteria", 2, 6)
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Viruses", 2, 6)
+show_empirical_homorepeat_counts_relative_to_expected(homo_empirical, "Archaea", 2, 10)
+```
+
+#### Empirical homorepeat frequencies (= counts / region lengths)
+```{r, echo=FALSE, eval=TRUE}
+show_empirical_homorepeat_counts_relative_to_total_seq_length <- function(data, kingdom, nmin, nmax){
+  homo_empirical = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax & set != "all" & type == "empirical")
+  p = ggplot(homo_empirical, aes(x=n, y=frequency, colour=set)) + geom_point()
+  p = p + facet_wrap(~ aa)
+  #p = p + scale_y_continuous(limits = c(0, 10))
+  p = p + scale_x_continuous(breaks = (seq(nmin, nmax, by = round((nmax/max(nmin,1))/5))))
+  p = p + geom_hline(yintercept=0)
+  beautifier(p)
+}
+
+show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Eukaryota", 0, 50)
+show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Bacteria", 0, 30)
+show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Viruses", 0, 30)
+show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Archaea", 0, 30)
+
+show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Eukaryota", 0, 10)
+```
+
+
+
+#### Fraction of homorepeats in IDRs of all homorepeats (normalized and not normalized by aa frequencies)
+```{r, echo=FALSE, eval=TRUE}
+# homo$frequency is the homorepeat count normalised by sequence length.
+# We need to calculate (homo$frequency [Disorder] / ( homo$frequency [Order] + homo$frequency [Disorder]))
+
+homo_d_frequency = homo[homo$type=="empirical" & homo$set=="disorder", c("Kingdom", "aa", "n", "frequency")]
+colnames(homo_d_frequency)[4] <- "d_frequency"
+homo_o_frequency = homo[homo$type=="empirical" & homo$set=="order", c("Kingdom", "aa", "n", "frequency")]
+colnames(homo_o_frequency)[4] <- "o_frequency"
+
+homo_frequency = merge(homo_d_frequency, homo_o_frequency, by = c("Kingdom","aa", "n"))
+homo_frequency$relative_fraction_disordered_homorepeats = homo_frequency$d_frequency / (homo_frequency$o_frequency + homo_frequency$d_frequency)
+homo_frequency$type = "empirical"
+homo_frequency = homo_frequency[, c("Kingdom", "aa", "n", "relative_fraction_disordered_homorepeats", "type")]
+
+tmp = subset(homo_frequency, Kingdom=="Eukaryota" & n < 15)
+
+# homo_expected$frequency is the expected frequency of homorepeats in the data.
+# We need to calculate (homo_expected$frequency [Disorder] / ( homo_expected$frequency [Order] + homo_expected$frequency [Disorder]))
+
+homo_d_frequency = homo[homo$type=="expected" & homo$set=="disorder", c("Kingdom", "aa", "n", "frequency")]
+colnames(homo_d_frequency)[4] <- "d_frequency"
+homo_o_frequency = homo[homo$type=="expected" & homo$set=="order", c("Kingdom", "aa", "n", "frequency")]
+colnames(homo_o_frequency)[4] <- "o_frequency"
+
+homo_frequency_exp = merge(homo_d_frequency, homo_o_frequency, by = c("Kingdom","aa", "n"))
+homo_frequency_exp$relative_fraction_disordered_homorepeats = homo_frequency_exp$d_frequency / (homo_frequency_exp$o_frequency + homo_frequency_exp$d_frequency)
+homo_frequency_exp$type = "expected_(bernoulli)"
+homo_frequency_exp = homo_frequency_exp[, c("Kingdom", "aa", "n", "relative_fraction_disordered_homorepeats", "type")]
+
+
+# Merge homo_normalized_sequence_length and homo_normalized_exp,  
+homo_normalized = rbind(homo_frequency_exp, homo_frequency)
+
+# Visualise data
+
+show_disorderd_vs_ordered_homorepeat_counts <- function(data, kingdom, nmin, nmax){
+  homo_empirical = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax)
+  p = ggplot(homo_empirical, aes(x=n, y=relative_fraction_disordered_homorepeats, colour=type)) + geom_point(alpha=0.8)
+  p = p + facet_wrap(~ aa)
+  #p = p + scale_y_continuous(limits = c(0, 10))
+  p = p + scale_x_continuous(breaks = (seq(nmin, nmax, by = round((nmax/max(nmin,1))/5))))
+  p = p + geom_hline(yintercept=0)
+  beautifier(p)
+}
+
+show_disorderd_vs_ordered_homorepeat_counts(homo_normalized, "Eukaryota", 0, 15)
+show_disorderd_vs_ordered_homorepeat_counts(homo_normalized, "Archaea", 0, 15)
+show_disorderd_vs_ordered_homorepeat_counts(homo_normalized, "Bacteria", 0, 15)
+show_disorderd_vs_ordered_homorepeat_counts(homo_normalized, "Viruses", 0, 15)
+
+```
+
+
+
+
+#### Expected homorepeat counts in an unbound sequence given the amino acid frequencies
+```{r, echo=FALSE, eval=TRUE}
+# Add up the frequencies for all amino acids
+homo_exp_sum = ddply(homo_exp, .(kingdom, n, set), summarize, expected_homorepeat_frequency_sum_over_all_aa = sum(expected_frequency))
+homo_exp_sum$log10_expected_homorepeat_frequency_sum_over_all_aa = log10(homo_exp_sum$expected_homorepeat_frequency_sum_over_all_aa)
+
+homo_exp_sum_tmp = subset(homo_exp_sum, n <= 25)
+p = ggplot(homo_exp_sum_tmp, aes(x=n, y=log10_expected_homorepeat_frequency_sum_over_all_aa, colour=set)) + geom_point() + facet_wrap(~ kingdom) + scale_y_continuous(breaks = (seq(-26, 0, by = 2)))
+beautifier(p)
+
+
+homo_exp_sum = subset(homo_exp_sum, n <= 6)
+p = ggplot(homo_exp_sum, aes(x=n, y=log10_expected_homorepeat_frequency_sum_over_all_aa, colour=set)) + geom_point() + facet_wrap(~ kingdom) + scale_y_continuous(breaks = (seq(-26, 0, by = 2)))
+beautifier(p)
+```
+

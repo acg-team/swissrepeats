@@ -1,0 +1,3174 @@
+---
+title: 'FIGURES: A new census of protein tandem repeats: fun with disorder.'
+output:
+  html_document: default
+  pdf_document: default
+date: "January 14, 2016"
+---
+
+# Housekeeping
+```{r Housekeeping, echo=FALSE}
+# Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
+setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
+source("local_config.R")
+setwd(paste0(local_base_path,"/results"))
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+
+# colour setup:
+#library(RColorBrewer); display.brewer.all() # to display available colour palettes
+colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
+getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
+cols1 <- c("#AA3939", "#AA7939", "#29506D", "#2D882D")  #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+cols2 <- c("#FFAAAA", "#FFDBAA", "#718EA4", "#88CC88") 
+cols3 <- c("#801515", "#805215", "#123652", "#116611")
+cols4 <- c("#550000", "#553100", "#042037", "#004400")
+```
+
+# Data Loading 
+```{r Data Loading , echo=FALSE, eval=TRUE}
+tr_path = "results/tr_annotations/tr_annotations.csv"
+tr_all = load_tr_annotations(tr_path)
+
+sp_path = "data/swissprot_annotations.tsv"
+sp_all = load_swissprot(sp_path, tr_all)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Add disorder information from modiDB
+discoor_path = "results/disorder_annotations/mobidb_coordinates.csv"
+discoor_all = load_disorder_annotations(discoor_path)
+
+discoor_all$disorder_region_length =  (discoor_all$end - discoor_all$start) + 1
+discoor_all$center = floor(discoor_all$start + (discoor_all$disorder_region_length/2))
+discoor_all_sp = merge(x = discoor_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Remove eventual regions with incorrect coordinates
+discoor_all_sp = discoor_all_sp[(discoor_all_sp$center<discoor_all_sp$Length),]
+
+#Aggregate disordered regions by protein, calculate disorder residues count in a protein
+sp_protein= ddply(discoor_all, .(ID), summarize,
+  disorder_count=(sum(disorder_region_length)))
+sp_protein = merge(x = sp_protein, y = sp_all, by = "ID", all.x = TRUE)
+
+
+aa_ignore = c("B", "X", "Z", "O", "U", "*","-",".","+", "other")
+homo_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/swissprot.csv"
+homo_all = load_homorepeat_data(homo_path, aa_ignore, "all")
+
+homo_disorder_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_consensus.csv"
+homo_d_all = load_homorepeat_data(homo_disorder_path, aa_ignore, "disorder")
+
+homo_order_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_consensus_inverse.csv"
+homo_o_all = load_homorepeat_data(homo_order_path, aa_ignore, "order")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/swissprot.csv"
+# homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/swissprot_kingdomwise.csv"
+# couldn't find the file "swissport_kingdomwise.csv" and don't know where it's generated... however swissprot exists in this directory and seems to work.
+homo_exp_all = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "all")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus.csv"
+homo_exp_d = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "disorder")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus_inverse.csv"
+homo_exp_o = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "order")
+```
+
+# Tandem Repeats general overview
+## Repeat unit length vs number of repeats
+Fig. 1a (cnf. Fig 5, Marcotte et al.)
+see presentation maria slide 14
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE, fig.width=15, fig.height=10}
+d = subset(tr_all_sp,  pvalue <= 0.01 & l_effective <= 80 & n_effective <= 40)
+
+# Zinc-finger
+table(d[grepl(pattern = "Zinc", x = d$protein_name),]$l_effective) # l_effective = 28 has a clear enrichment
+# LRR
+table(d[grepl(pattern = "LRR", x = d$protein_name),]$l_effective) # l_effective = 24 and 26 has a clear enrichment
+# WD40
+table(d[grepl(pattern = "WD40", x = d$protein_name),]$l_effective) # l_effective = 24, 26 and 57 has a clear enrichment
+```
+
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE, fig.width=15, fig.height=10}
+
+refactor = function(col) {
+  factor(col, levels = min(col):max(col))
+}
+d_summary = d %>%
+  mutate(n_effective_rounded = round(n_effective)) %>%
+  group_by(l_effective, n_effective_rounded) %>%
+  summarize(count=n()) %>%
+  ungroup() %>%
+  transmute(l_effective = refactor(l_effective),
+         n_effective_rounded = refactor(n_effective_rounded),
+         log10count=log10(count))
+
+
+p = ggplot(d_summary, aes(x=l_effective, y=n_effective_rounded, fill=log10count)) +
+  geom_raster() + 
+  # scale_fill_gradientn(colors=parula(256), guide = "colourbar") +
+  scale_fill_gradientn(colors= rev(cividis(256)), guide = "colourbar") +
+  geom_vline(xintercept = 24, colour = "grey", size = 1) + #LRR
+  geom_vline(xintercept = 26, colour = "grey", size = 1) + #LRR
+    geom_label(aes(x = 25, y = 28, label = "LRR"), fill = "white", size = 10)+
+  
+  geom_vline(xintercept = 28, colour = "grey", size = 1) + # Zn-finger
+    geom_label(aes(x = 28, y = 33, label = "Zn-finger"), fill = "white", size = 10)+
+  
+  geom_vline(xintercept = 41, colour = "grey", size = 1)+ #WD40 
+  geom_vline(xintercept = 26, colour = "grey", size = 1)+ #WD40 
+  geom_vline(xintercept = 57, colour = "grey", size = 1)+ #WD40 
+    geom_label(aes(x = 26, y = 38, label = "WD40"), fill = "white", size = 10)+
+    # geom_label(aes(x = 49, y = 38, label = "WD40"), fill = "white", size = 10)+
+    geom_label(aes(x = 41, y = 38, label = "WD40"), fill = "white", size = 10)+
+    geom_label(aes(x = 57, y = 38, label = "WD40"), fill = "white", size = 10)+
+  labs(x="Repeat Unit Length", #expression(l[effective]),
+       y="Number of repeats", #expression(n[effective]),
+       fill=expression(log[10](count))) +
+  scale_x_discrete(breaks=c(1,seq(0,80,5),80)) +
+  scale_y_discrete(breaks=c(2,seq(0,40,5),40))
+
+
+p = beautifier(p)
+# p = p + theme(text = element_text(family = "sans", size=48),
+#               strip.text = element_text(size=30, angle = 0),
+#               axis.text = element_text(size=25, margin=margin(10,1,2,1,"pt")),
+#               #panel.background = element_rect(fill="black"),
+#               panel.grid.major = element_blank(),
+#               panel.grid.minor = element_blank(),
+#               legend.key.size = unit(48, "pt"))
+p <- paper.figure(p)
+p
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "fig1", figureFormat), width=12, height=8, dpi = 300)
+}
+#TODO: fix labelling!
+```
+Fig. 1a: Distribution (Heatmap) of tandem repeats (TRs) in Swiss-Prot as a function of their repeat unit length $l_{effective} <= 80$ (x-Axis, x1) and their number of repeat units $n_{effective} <= 40$ (x2, y-Axis). Brighter colour indicates a larger number of TRs with a specific length and number of repeats. The majority of TRs has short TR units. Yet, there is a blob of domain TRs ($25 < l_{effective} < 50$), with certain TR unit length clearly enriched (e.g., $l_{effective} = 28$, mostly Zn finger TRs.)
+
+## Short TRs occur with high unit numbers
+```{r}
+short_TRs_summary <-subset(tr_all_sp, has_short_tr == TRUE & pvalue <= 0.01)
+short_TRs_summary <- short_TRs_summary[which(short_TRs_summary$l_effective > 1),] # exclude homorepeats
+short_TRs_summary <- short_TRs_summary[which(short_TRs_summary$n > 200),] # show only high unit numbers: n>200
+print(short_TRs_summary[order(short_TRs_summary$n, decreasing = TRUE),]) # Serine aspartate from staphylococcus aureus and collagen units from odd-toed ungulates (horses)
+print(short_TRs_summary[which(short_TRs_summary$ID == "Q9KI14"),])
+# Homo sapiens (Human)
+short_TRs_summary <- subset(tr_all_sp, has_short_tr == TRUE & pvalue <= 0.01)
+short_TRs_summary <- short_TRs_summary[which(short_TRs_summary$l_effective > 1),] # exclude homorepeats
+short_TRs_summary <- short_TRs_summary[which(short_TRs_summary$n > 200 & short_TRs_summary$Species == "Homo sapiens (Human)"),] # show only high unit numbers: n>200
+print(short_TRs_summary[order(short_TRs_summary$n, decreasing = TRUE),]) # Mucin and Collagen protein units (including Major airway glycoprotein)
+
+# subset as in figure 1a with grey lines indicated
+short_TRs_summary <- subset(tr_all_sp,  pvalue <= 0.01 & l_effective <= 80 & n_effective <= 40)
+short_TRs_summary <- short_TRs_summary[which(short_TRs_summary$l_effective > 28 & short_TRs_summary$l_effective < 50),] 
+short_TRs_summary <- short_TRs_summary[which(short_TRs_summary$n_effective <= 40),] # show only high unit numbers: n>200
+print(short_TRs_summary[order(short_TRs_summary$n_effective, decreasing = TRUE),]) # 
+
+```
+## Domain TRs mostly consist of few units. 
+```{r}
+domain_TRs_summary <- subset(tr_all_sp,  pvalue <= 0.01 & l_effective <= 80 & l_effective >1 & n_effective <= 40 & has_domain_tr == TRUE)
+domain_TRs_summary <- subset(tr_all_sp,  pvalue <= 0.01 & l_effective >1 & has_domain_tr == TRUE)
+
+ggplot(domain_TRs_summary, aes(x = ID, y = n_effective))+
+  geom_point()
+
+domain_TRs_summary[which(domain_TRs_summary$n_effective > 300),]
+
+domain_TRs_summary[which(domain_TRs_summary$ID == "Q5HFY8"),]
+domain_TRs_summary <- domain_TRs_summary[order(domain_TRs_summary$n_effective, decreasing = TRUE),]
+print(domain_TRs_summary)
+```
+
+## TRs are not homogenously distributed in terms of their unit lengths and numbers
+```{r}
+d_all_sp = subset(tr_all_sp,  pvalue <= 0.01 & l_effective <= 80 & n_effective <= 40)
+d_all_sp_summary <- d_all_sp %>%
+  mutate(n_effective_rounded = round(n_effective)) 
+head(d_all_sp_summary)
+
+d_all_sp_summary_selection <- d_all_sp_summary[which(d_all_sp_summary$l_effective > 25 & d_all_sp_summary$l_effective < 50),]
+print(d_all_sp_summary_selection[order(d_all_sp_summary_selection$protein_name, decreasing = TRUE),]) # ordered by decreasing protein name
+# Zinc-finger
+print(d_all_sp_summary_selection[grepl(pattern = "Zinc", x = d_all_sp_summary_selection$protein_name),]) # select rows containing "Zinc" in protein_name
+zinc_n <- sum(grepl(pattern = "Zinc", x = d_all_sp_summary_selection$protein_name))
+zinc_frac <- zinc_n/nrow(d_all_sp_summary_selection)
+# LRR
+print(d_all_sp_summary_selection[grepl(pattern = "LRR", x = d_all_sp_summary_selection$protein_name),]) # select rows containing "LRR" in protein_name
+LRR_n <- sum(grepl(pattern = "LRR", x = d_all_sp_summary_selection$protein_name))
+LRR_frac <- LRR_n/nrow(d_all_sp_summary_selection)
+# WD40
+print(d_all_sp_summary_selection[grepl(pattern = "WD40", x = d_all_sp_summary_selection$protein_name),]) # select rows containing "WD40" in protein_name
+WD40_n <- sum(grepl(pattern = "WD40", x = d_all_sp_summary_selection$protein_name))
+WD40_frac <- WD40_n/nrow(d_all_sp_summary_selection)
+print(paste("Selection of proteins with 25 < repeat length <50",  
+            "fraction of Zinc-finger associated Proteins: ", round(zinc_frac, digits = 3), 
+            "fraction of LRR associated Proteins: ", round(LRR_frac, digits = 3), 
+            "fraction of WD40 associated Proteins: ", round(WD40_frac, digits = 3), 
+            collapse = '\n'))
+
+df <- subset(tr_all_sp,  pvalue <= 0.01) # subset(tr_all_sp,  pvalue <= 0.01 & l_effective <= 80 & n_effective <= 40)
+#some dummy data
+# df <- data.frame(ID = as.factor(c("ID1", "ID2", "ID3", "ID4", "ID5", "ID6", "ID7", "ID8", "ID9")),
+#                  n_effective = as.numeric(c(2.558824,  2.520000,  4.875000,  2.875000,  3.750000,  2.000000,  2.000000,  2.000000, 23.875000)),
+#                  Superkingdom = as.character(c("Eukaryota", "Eukaryota", "Eukaryota", "Bacteria", "Bacteria", "Bacteria", "Archeae", "Archeae", "Viruses")))
+p1 <- ggplot(df, aes(x = ID, y = n_effective, facet = Superkingdom))+
+  facet_wrap(facets = "Superkingdom")+
+  geom_point()+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_blank())+
+  scale_x_discrete(labels = NULL)+
+  labs(x = "Protein ID", y = "Repeat unit number")
+p1 <- beautifier(p1)
+p1 <- paper.figure(p1)
+p1
+if( save) {
+    ggsave(paste0(pathImages, "TR_distribution_unit_numbers", figureFormat), width=12, height=8, dpi = 300)
+}
+
+print(subset(tr_all_sp,  pvalue <= 0.01 & has_domain_tr == TRUE & Superkingdom == "Bacteria" & n_effective > 250)) # Uncharacterized PE-PGRS family protein PE_PGRS54 of Mycobacterium tuberculosis, Cell surface glycoprotein 1 of Clostridium thermocellum, Staphylococcus aureus surface protein A and Serine-aspartate repeat-containing protein F of Staphylococcus aureus and epidermis respectively
+print(subset(tr_all_sp,  pvalue <= 0.01 & has_domain_tr == TRUE & Superkingdom == "Eukaryota" & n_effective > 300)) # highest value belongs to Eremothecium gossypii protein of Mediator of RNA polymerase II transcription subunit 15
+print(subset(tr_all_sp,  pvalue <= 0.01 & has_domain_tr == TRUE & Superkingdom == "Viruses" & n_effective > 300)) # Collagen-like protein 7 of Mimiviridae family
+print(subset(tr_all_sp,  pvalue <= 0.01 & has_domain_tr == TRUE & Superkingdom == "Viruses" & n_effective > 180)) # different Collagen-like proteins of mimiviridae
+
+
+p2 <- ggplot(df, aes(x = ID, y = l_effective, facet = Superkingdom))+
+  facet_wrap(facets = "Superkingdom")+
+  geom_point()+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_blank())+
+  scale_x_discrete(labels = NULL)+
+  labs(x = "Protein ID", y = "Repeat unit length")
+p2 <- beautifier(p2)
+p2 <- paper.figure(p2)
+p2
+if( save) {
+    ggsave(paste0(pathImages, "TR_distribution_unit_length", figureFormat), width=12, height=8, dpi = 300)
+}
+
+p3 <- ggplot(df, aes(x = ID, y = total_repeat_length, facet = Superkingdom))+
+  facet_wrap(facets = "Superkingdom")+
+  geom_point()+
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text.x = element_blank())+
+  scale_x_discrete(labels = NULL)+
+  labs(x = "Protein ID", y = "Repeat Length")
+p3 <- beautifier(p1)
+p3 <- paper.figure(p3)
+p3
+if( save) {
+    ggsave(paste0(pathImages, "TR_distribution_total_repeat_length", figureFormat), width=12, height=8, dpi = 300)
+}
+
+print(subset(tr_all_sp,  pvalue <= 0.01 & has_domain_tr == TRUE & Superkingdom == "Bacteria" & l_effective >= 440)) # hemagglutinin A used for host colonisation by adhesion to extracellular matrix proteins Nelson2003, Han1996
+print(subset(tr_all_sp,  pvalue <= 0.01 & has_domain_tr == TRUE & Superkingdom == "Eukaryota" & l_effective >= 900)) # (Anchorage 1 protein) (Nesprin homolog) in C. elegans and  (MUC-11) (FcgammaBP) in Human
+```
+Fig1a reveals multpile peaks showing that some unit lengths are particularly frequent. These peaks represent common TRs, with specific TR units used in varying number.
+One example is the zinc-finger (xx and xx aa) but also LRR and WD40-like beta propeller
+
+
+# Fraction of TR vs. Mean protein length (Fig 1a Marcotte et al.)
+Show how sequence length and presence of TRs correlate.
+```{r, echo=TRUE}
+sp = ddply(sp_all, .(origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), 
+           summarize,
+           has_tr_fraction=sum(has_tr==TRUE)/length(ID), 
+           has_homo_tr_fraction=sum(has_homo_tr==TRUE)/length(ID),
+           has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), 
+           has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), 
+           has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), 
+           mean_sequence_length=mean(Length), 
+           "Prot. count"=length(ID))
+
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+colour_count = 13
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_tr_fraction, shape=Superkingdom, size=log10(sp$`Prot. count`))) + 
+  geom_abline(intercept=0, slope=mean(sp$has_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  geom_point()+
+  geom_text_repel(aes(label = origin),
+                   size = 5,
+                  direction = c("both"),
+                  box.padding   = 1, 
+                  point.padding = 0.4,
+                  segment.alpha = 0.5,
+                  segment.color = 'grey50') +
+  scale_fill_manual(values=getPalette(colour_count)) + 
+  scale_size_continuous(range=c(2,7),
+                        name="log10(Prot. count)")+ #scale_colour_brewer(type=2, palette="RdYlBu")
+  # ggtitle('All tandem repeats')
+  labs(x="Mean Protein Length", 
+       y="Fraction of TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "Mean_Prot_length_vs_Frac_TR", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+#### Checking the outliers
+```{r}
+sp[which(sp$origin == "Mitochondrial (Viridiplantae)"),]
+head(sp_all)
+unique(sp_all$origin)
+tr_all_sp[which(tr_all_sp$origin == "Mitochondrial (Viridiplantae)" & tr_all_sp$is_chloroplastic == TRUE & tr_all_sp$is_mitochondrial == TRUE),]
+# there are proteins, with Chloroplastic/mitochondrial in their name...
+# made a new group in helpers.R load_swissprot function.
+```
+
+
+#### Percentage of TRs in all swissprot proteins by Species
+Normalized by the number of available Proteins.
+```{r}
+# reproduce findings from above with different approach to eliminate logic error
+has_tr_by_Spe = sp_all %>% # get all proteins with TRs
+  subset(has_tr == TRUE) %>%
+  group_by(Species) %>%
+  count(sort = TRUE)
+sp_by_Spe = sp_all %>% # group all proteins (w/ and w/o TRs) by superkingdom
+  group_by(Species) %>%
+  count(sort = TRUE)
+TR_frac_Spe = merge(x=sp_by_Spe, y=has_tr_by_Spe, by = "Species")
+colnames(TR_frac_Spe) = c("Species", "total_number_of_prot", "prot_w_TR")
+TR_frac_Spe$frac = TR_frac_Spe$prot_w_TR / TR_frac_Spe$total_number_of_prot # fraction/percentage of proteins with TRs
+TR_frac_Spe$frac = round(TR_frac_Spe$frac, digits = 3)
+TR_frac_Spe = TR_frac_Spe[order(TR_frac_Spe$frac, decreasing = TRUE),]
+print(head(TR_frac_Spe))
+
+highlight <- c("Homo sapiens (Human)", "Mus musculus (Mouse)", "Arabidopsis thaliana (Mouse-ear cress)", "Escherichia coli", "Saccharomyces cerevisiae (Baker's yeast)", "Dictyostelium discoideum (Slime mold)", "Drosophila melanogaster (Fruit fly)", "Caenorhabditis elegans","Danio rerio (Zebrafish) (Brachydanio rerio)")
+TR_frac_Spe_highlight <- TR_frac_Spe[which(TR_frac_Spe$Species %in% highlight),]
+print(TR_frac_Spe_highlight)
+```
+
+Make plot of highlights. x=sequence length, y=fract of Proteins with TRs
+```{r}
+#subset sp_all to get length of specific species
+species_prot_length <- sp_all[which(sp_all$Species %in% highlight), ]
+species_prot_length = ddply(species_prot_length, .(Species), 
+           summarize, 
+           mean_sequence_length=mean(Length))
+
+# merge to one data frame with the TR_frac_Spe_highlight
+TR_frac_Spe_highlight <- merge(x = TR_frac_Spe_highlight, y = species_prot_length, by = "Species")
+
+# plot x=sequence length, y=fract of Proteins with TRs
+
+p <- ggplot(TR_frac_Spe_highlight, aes(x = TR_frac_Spe_highlight$mean_sequence_length, y = TR_frac_Spe_highlight$frac)) #TODO: colour by superkingdom
+p <- p +
+  theme_classic()+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) + 
+  # geom_text(aes(label=Species),hjust=0, vjust=0)+
+  # geom_text(aes(label=ifelse(PTS>24,as.character(Name),'')),hjust=0,vjust=0)+
+  geom_label_repel(aes(label = Species),
+                  direction = c("both"),
+                  box.padding   = 1, 
+                  point.padding = 0.4,
+                  segment.alpha = 0.5,
+                  segment.color = 'grey50') +
+  labs(x="Mean Protein Length", 
+       y="Fraction of TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "Perc_TRs_all_sp_prots", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+#### distinct TR regions
+subset proteins with more than one distinct TR region, sort them by superkingdom:
+```{r}
+distinct_region = ddply(tr_all_sp, .(Superkingdom), 
+                     summarize,
+                     no_prots = round(length(ID), digits = 3),
+                     no_unique_TRs = round(length(unique(ID)), digits = 3),
+                     no_non_unique_TRs = round(length(ID) - length(unique(ID)), digits = 3),
+                     ratio_unique_TRs = round(length(unique(ID))/length(ID), digits = 3),
+                     ratio_non_unique_TRs = round(1-length(unique(ID))/length(ID), digits = 3)
+                       )
+print(distinct_region)
+```
+
+## Sequence length in bins vs. fraction of TRs (Fig2a-2 (cnf. Fig 1b Marcotte et al.)
+Show how sequence length and presence of TRs correlate.
+```{r, echo=TRUE}
+sequence_length_bin <- with(sp_all, cut(Length, breaks = c(0, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1250, 1500, 2000, 50000), dig.lab=12))
+sp <- ddply(sp_all, .(Superkingdom, sequence_length_bin), 
+            summarise, 
+            has_tr_fraction=sum(has_tr==TRUE)/length(ID),            
+            has_homo_tr_fraction=sum(has_homo_tr==TRUE)/length(ID),
+            has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), 
+            has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), 
+            has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), 
+            n_proteins=length(ID))
+sp$has_tr_fraction_binary_proportion_confidence_interval = sqrt(sp$has_tr_fraction*(1-sp$has_tr_fraction)/sp$n_proteins)
+
+
+# Need to summarize data for blocks of "Length".
+# For the error bars, see https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_tr_fraction, colour=Superkingdom)) + 
+  geom_point()+ 
+  geom_errorbar(aes(ymin=has_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2) +
+  scale_colour_brewer(type=2, palette="Dark2")+
+  # ggtitle('Tandem repeat appearance by protein sequence length and Superkingdom')+
+  theme(text = element_text(),
+        legend.text = element_text(family = "sans", face='italic', hjust=0),
+        strip.text.x = element_text(family = "sans", angle = 0),
+        strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+        axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+        axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))) +
+  labs(x="Sequence length", 
+       y="Fraction of TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-2", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+## Micro Tandem Repeats -> Supplementary (incl. small and domain)
+```{r, echo=FALSE}
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_homo_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + 
+  geom_errorbar(aes(ymin=has_homo_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_homo_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)+
+  scale_colour_brewer(type=2, palette="Dark2") +
+  ggtitle('Homo tandem repeats') + # TODO: Add wrapped plots for other species
+  theme(
+                 text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans", angle = 0),
+                 strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))
+                 ) +
+  labs(x="Sequence length",
+       y="Fraction with homo TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-3", figureFormat), width=12, height=8, dpi = 300)
+}
+
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_micro_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + 
+  geom_errorbar(aes(ymin=has_micro_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_micro_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)+
+  scale_colour_brewer(type=2, palette="Dark2") +
+  ggtitle('Micro tandem repeats') + # TODO: Add wrapped plots for other species
+  theme(
+                 text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans", angle = 0),
+                 strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))
+                 ) +
+  labs(x="Sequence length",
+       y="Fraction with micro TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-4", figureFormat), width=12, height=8, dpi = 300)
+}
+
+
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_short_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + 
+  geom_errorbar(aes(ymin=has_micro_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_micro_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)+
+  scale_colour_brewer(type=2, palette="Dark2") +
+  ggtitle('Small tandem repeats') + # TODO: Add wrapped plots for other species
+  theme(
+                 text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans", angle = 0),
+                 strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))
+                 ) +
+  labs(x="Sequence length",
+       y="Fraction with smal TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-5", figureFormat), width=12, height=8, dpi = 300)
+}
+
+
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_domain_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + 
+  geom_errorbar(aes(ymin=has_micro_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_micro_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)+
+  scale_colour_brewer(type=2, palette="Dark2") +
+  ggtitle('Domain tandem repeats') + # TODO: Add wrapped plots for other species
+  theme(
+                 text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans", angle = 0),
+                 strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))
+                 ) +
+  labs(x="Sequence length",
+       y="Fraction with domain TR")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-6", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+Fig. 2a-2) Shown is the fraction of TRs in the Superkingdoms as a function of protein sequence bins.
+
+
+# Proteins with >= 4 distinct TR regions:
+```{r}
+# select proteins which have >4 distinct TR regions
+many_distinct_regions = tr_all_sp %>% # take all TR,
+  count(ID) %>%                       # count how often a specific Prot. occurs in the list of all TRs,
+  filter(n >= 4)                      # take only those who appear >4 times -> have more than 4 distinct TRs
+print(many_distinct_regions)
+
+# index tr_all_sp to display only those with >4 distinct TR regions
+tr_all_sp_many_distinct_regions <- tr_all_sp[which(tr_all_sp$ID %in% many_distinct_regions$ID), ]
+
+### sorted by Superkingdom
+sort_by_SK <- tr_all_sp_many_distinct_regions %>%
+  count(Superkingdom, sort = TRUE) 
+print(sort_by_SK)
+
+# normalize by total number of total protein entries per Superkingdom
+total_entries_per_SK <- tr_all_sp %>%
+  count(Superkingdom)
+sort_by_SK  <- merge(x= sort_by_SK , y= total_entries_per_SK, by = "Superkingdom")
+sort_by_SK$norm <- sort_by_SK$n.x/sort_by_SK$n.y
+sort_by_SK <- sort_by_SK[order(sort_by_SK$norm, decreasing = TRUE),]
+print(head(sort_by_SK))
+```
+In Eukaryotes, 43% (90026 absolute count) of all
+proteins with TRs had 4 (or more) distinct TR regions.
+
+```{r}
+### sorted by species
+sort_by_species <- tr_all_sp_many_distinct_regions %>%
+  count(Species, sort = TRUE) 
+#total_entries_per_species[which(total_entries_per_species$Species == "Homo sapiens (Human)"),]
+
+# normalize by total number of total protein entries per species
+total_entries_per_species <- tr_all_sp %>%
+  count(Species)
+
+sort_by_species <- merge(x= sort_by_species, y= total_entries_per_species, by = "Species")
+# sort_by_species[which(sort_by_species$Species == "Homo sapiens (Human)"),]
+
+sort_by_species$norm <- sort_by_species$n.x/sort_by_species$n.y
+sort_by_species <- sort_by_species[order(sort_by_species$norm, decreasing = TRUE),]
+print(head(sort_by_species))
+```
+The here listes species have in all collected Prots in Swissprot KB TRs with >4 distinct TRs.
+
+```{r}
+### Sorted by TR type all superkingdoms
+total_TRs <- tr_all_sp %>%
+  count(has_tr, sort = TRUE)
+many_distinct_regions_TR_overallfractions = ddply(tr_all_sp_many_distinct_regions, .(Superkingdom),
+                                           summarize,
+                                           has_tr_fraction=round(sum(has_tr==TRUE)/total_TRs$n, digits = 3), #not representative
+                                           has_micro_tr_fraction=round(sum(has_micro_tr==TRUE)/total_TRs$n, digits = 3),
+                                           has_short_tr_fraction=round(sum(has_short_tr==TRUE)/total_TRs$n, digits = 3),
+                                           has_domain_tr_fraction=round(sum(has_domain_tr==TRUE)/total_TRs$n, digits = 3))
+print(many_distinct_regions_TR_overallfractions)
+```
+Of all eukaryotic proteins which have >=4 TRs, 21.5% are micro TRs, 22.6% are short TRs and 11.5% are domain TRs
+
+```{r}
+many_distinct_regions_TR_sum = ddply(tr_all_sp_many_distinct_regions, .(Superkingdom), 
+                                           summarize,
+                                           has_tr_sum=sum(has_tr==TRUE), 
+                                           has_micro_tr_sum=sum(has_micro_tr==TRUE), 
+                                           has_short_tr_sum=sum(has_short_tr==TRUE), 
+                                           has_domain_tr_sum=sum(has_domain_tr==TRUE))
+print(many_distinct_regions_TR_sum)
+```
+the TR-types differe within the proteins containing >4 TRs. -> that's a possible reason that tr_sum has less counts than micro+short+domain TRs toghether. has_TR is True as soon as one of the other is TRUE.
+
+```{r}
+many_distinct_regions_TR_overallsum_unsplit <- colSums(as.data.frame(many_distinct_regions_TR_sum[,2:5]))
+many_distinct_regions_TR_overallfractions_unsplit <- many_distinct_regions_TR_overallsum_unsplit[2:4]/many_distinct_regions_TR_overallsum_unsplit[1]
+print(round(many_distinct_regions_TR_overallfractions_unsplit, digits = 3))
+
+many_distinct_regions_TR_fractions = ddply(tr_all_sp_many_distinct_regions, .(Superkingdom),
+                                           summarize,
+                                           # has_tr_fraction=round(sum(has_tr==TRUE)/n(), digits = 3), #not representative
+                                           has_micro_tr_fraction=round(sum(has_micro_tr==TRUE)/n(), digits = 3),
+                                           has_short_tr_fraction=round(sum(has_short_tr==TRUE)/n(), digits = 3),
+                                           has_domain_tr_fraction=round(sum(has_domain_tr==TRUE)/n(), digits = 3))
+print(many_distinct_regions_TR_fractions)
+```
+In proteins, which have >4 TRs, The distribution of the TRs is in Archaea: 77.2% micro TRs, 93.3% short TRs and 47.2% domain TRs.
+
+```{r}
+df <- gather(many_distinct_regions_TR_fractions, key = "TR_type", value = "Fraction", c("has_micro_tr_fraction", "has_short_tr_fraction", "has_domain_tr_fraction"))
+df$TR_type[which(df$TR_type=="has_micro_tr_fraction")] <- "micro TRs"
+df$TR_type[which(df$TR_type=="has_short_tr_fraction")] <- "small TRs"
+df$TR_type[which(df$TR_type=="has_domain_tr_fraction")] <- "domain TRs"
+cols1 <- c("#AA3939", "#AA7939", "#29506D", "#2D882D")  #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+p <- ggplot(df, aes(x = Superkingdom, y = Fraction, facet = TR_type, fill = Superkingdom))+
+  facet_wrap(facets="TR_type") +
+  geom_col()
+p <- beautifier(p)+
+  scale_fill_manual(values = cols1)
+p <- paper.figure(p)+
+  theme(axis.title.x=element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1.1),
+        legend.position = "none")
+  # ggtitle(paste("TR types in proteins with more or equal 4 TRs"))
+p
+if(save) {
+    ggsave(paste0(pathImages, "TRtypes_distribution_in_prot_with_more_4TRs", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+Proteins with ≥4 distinct TR regions are sorted by their TR type
+and shown kingdomwise. One can clearly see, that over all kingdoms small
+TRs dominate in proteins with many distinct regions.
+
+
+
+# TRs are abundant in proteins of all domains of life
+## Table: Percentage of TRs in all swissprot proteins by superkingdom
+(Table: Numbers of TR annotations)
+```{r}
+str(sp_all)
+TR_fractions_TRprots = ddply(tr_all_sp, .(Superkingdom), 
+                     summarize,
+                     has_homo_tr_fraction=round(sum(has_homo_tr==TRUE)/n(), digits = 3),
+                     has_micro_tr_fraction=round(sum(has_micro_tr==TRUE)/n(), digits = 3), 
+                     has_short_tr_fraction=round(sum(has_short_tr==TRUE)/n(), digits = 3), 
+                     has_domain_tr_fraction=round(sum(has_domain_tr==TRUE)/n(), digits = 3), 
+                     mean_sequence_length=mean(Length), 
+                     prot_count=length(ID),
+                     tr_count = sum(has_tr==TRUE))
+print(TR_fractions_TRprots) # of proteins containing TRs
+TR_fractions_allprots = ddply(sp_all, .(Superkingdom), 
+                     summarize,
+                     has_tr_fraction=round(sum(has_tr==TRUE)/n(), digits = 3), 
+                     has_homo_tr_fraction=round(sum(has_homo_tr==TRUE)/n(), digits = 3),
+                     has_micro_tr_fraction=round(sum(has_micro_tr==TRUE)/n(), digits = 3), 
+                     has_short_tr_fraction=round(sum(has_short_tr==TRUE)/n(), digits = 3), 
+                     has_domain_tr_fraction=round(sum(has_domain_tr==TRUE)/n(), digits = 3), 
+                     mean_sequence_length=mean(Length), 
+                     prot_count=length(ID),
+                     tr_count = sum(has_tr==TRUE))
+print(TR_fractions_allprots) # of all proteins in swiss-prot
+# TODO: why are tr_counts not the same in these two datasets?
+# Other approach:
+TR_fractions_allprots <- ddply(sp_all, .(Superkingdom), 
+                     summarize,
+                     "TR count" = sum(has_tr==TRUE),
+                     "TR fraction"=round(sum(has_tr==TRUE)/n(), digits = 3), 
+                     "homo TR fraction"=round(sum(has_homo_tr==TRUE)/n(), digits = 3), 
+                     "micro TR fraction"=round(sum(has_micro_tr==TRUE)/n(), digits = 3), 
+                     "short TR fraction"=round(sum(has_short_tr==TRUE)/n(), digits = 3), 
+                     "domain TR fraction"=round(sum(has_domain_tr==TRUE)/n(), digits = 3), 
+                     "mean prot. sequence length"=round(mean(Length), digits = 0), 
+                     "prot. count"=length(ID))
+print(TR_fractions_allprots) # of all proteins in swiss-prot
+TR_fractions_TRprots <- ddply(sp_all[which(sp_all$has_tr == TRUE), ], .(Superkingdom), 
+                     summarize,
+                     "TR fraction"=round(sum(has_tr==TRUE)/n(), digits = 3), 
+                     "homo TR fraction"=round(sum(has_homo_tr==TRUE)/n(), digits = 3), 
+                     "micro TR fraction"=round(sum(has_micro_tr==TRUE)/n(), digits = 3), 
+                     "short TR fraction"=round(sum(has_short_tr==TRUE)/n(), digits = 3), 
+                     "domain TR fraction"=round(sum(has_domain_tr==TRUE)/n(), digits = 3), 
+                     "mean prot. sequence length"=round(mean(Length), digits = 0), 
+                     "prot. count"=length(ID))
+print(TR_fractions_TRprots) # of proteins containing TRs
+# prot_count fits the statistics of: https://web.expasy.org/docs/relnotes/relstat.html
+# Keeping the second approach...
+papertable <- t(TR_fractions_TRprots)
+papertable2 <- t(TR_fractions_allprots)
+papertable <- rbind(papertable2, papertable[2:nrow(papertable),])
+xtable(papertable)
+
+
+# reproduce findings from above with different approach to eliminate logic error
+has_tr_by_SK = sp_all %>% # get all proteins with TRs
+  subset(has_tr == TRUE) %>%
+  group_by(Superkingdom) %>%
+  count()
+sp_by_SK = sp_all %>% # group all proteins (w/ and w/o TRs) by superkingdom
+  group_by(Superkingdom) %>%
+  count()
+TR_frac_euk = has_tr_by_SK$n[3] / sp_by_SK$n[3] # fraction/percentage of eukaryotic proteins with TRs
+```
+should be corrected to: DONE
+"Overall, 50.9% of all UniProtKB/Swiss-Prot eukaryotic proteins contained
+at least one TR. Interestingly, 43.6% of viral proteins
+contained TRs, almost as frequently as in eukaryotes.
+In comparison, fewer prokaryotic proteins contained TR,
+but nevertheless > 30% for both bacterial and archaeic
+proteins."
+
+Were majority in any specific organism? Or simply give examples. For example, this was XX in human, XX in drosophila and XX in yeast. There were interesting examples in Jorda \& Kajava 2010, although just for homorepeats.
+
+## Mean Protein Length vs Fraction of TR (Fig 2a (cnf. Fig 1a, Marcotte et al.))
+```{r, echo=FALSE, eval=TRUE}
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+sp = ddply(sp_all, .(origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), 
+           summarize, 
+           has_tr_fraction=sum(has_tr==TRUE)/length(ID), 
+           has_homo_tr_fraction=sum(has_homo_tr==TRUE)/length(ID),
+           has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), 
+           has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), 
+           has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), 
+           mean_sequence_length=mean(Length), 
+           count=length(ID))
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=8/3}
+sp_gathered <- sp %>%
+  gather("RepeatType","Fraction", has_tr_fraction, has_micro_tr_fraction, has_short_tr_fraction, has_domain_tr_fraction) %>%
+  mutate(RepeatType = recode_factor(RepeatType, has_tr_fraction="All", has_micro_tr_fraction="Micro", has_short_tr_fraction="Small", has_domain_tr_fraction="Domain")) %>%
+  #filter(RepeatType != "All") %>%
+  mutate(Source=as.factor(if_else(is_chloroplastic, "Chloroplast", if_else(is_mitochondrial,"Mitochondria", "Organism")))) %>%
+  mutate(Kingdom = factor(if_else(Superkingdom != "Eukaryota", Superkingdom,
+                          if_else(Kingdom != "", Kingdom, "Other Eukaryota")),
+                          levels = c("Metazoa","Viridiplantae","Fungi", "Other Eukaryota", "Bacteria", "Archaea","Viruses"))) %>%
+  filter(RepeatType != "All")
+head(sp_gathered)
+
+sp_gathered.means = sp_gathered %>%
+  group_by(RepeatType) %>%
+  summarize(slope = mean(Fraction)/mean(mean_sequence_length)) %>%
+  ungroup() %>%
+  mutate(intercept=0) %>%
+  as.data.frame()
+head(sp_gathered.means)
+
+p = sp_gathered %>% 
+  ggplot(aes(x=mean_sequence_length, y=Fraction, facet=RepeatType, shape=Source, color=Kingdom)) +
+  facet_wrap(facets="RepeatType") +
+  geom_abline(data = sp_gathered.means, aes(intercept=0, slope=slope)) +
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_colour_brewer(type=2, palette="Dark2")+
+  scale_size_continuous(range=c(2,7))
+  #ggtitle(' tandem repeats')
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_combined", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+The amount of TRs (normalized by the amount of protein entries  of the species) is displayed separately for each TR-type as a function of the mean length of the proteins. It can clearly be seen, that TRs appear mostly as small TRs. Comparing the fraction of TRs kingdom-wise, some clear tendencies can be seen for micro- and small TRs. For example, chloroplastic proteins with unknown Kingdom (better: different Kingdoms?)tend to have few TRs and short mean protein length. Where in contrast mitochondrial proteins from Viridiplantae and Fungi tend to have many TRs and long mean protein length.
+
+# TR type in all swissprots
+Calculate the fraction of each TR type in the whole set:
+```{r}
+sp_gathered$Superkingdom <- as.factor(sp_gathered$Superkingdom)
+
+# micro TR
+df.micro <- sp_gathered[which(sp_gathered$RepeatType == "Micro"),]
+model.lm <- lm(Fraction ~ mean_sequence_length, data = df.micro)
+summary(model.lm)
+
+# small TR
+df.small <- sp_gathered[which(sp_gathered$RepeatType == "Small"),]
+model.lm <- lm(Fraction ~ mean_sequence_length, data = df.small)
+summary(model.lm)
+
+# domain TR
+df.domain <- sp_gathered[which(sp_gathered$RepeatType == "Domain"),]
+model.lm <- lm(Fraction ~ mean_sequence_length, data = df.domain)
+summary(model.lm)
+
+```
+
+
+```{r}
+sp = ddply(sp_all, .(origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), 
+           summarize,
+           has_tr_fraction=sum(has_tr==TRUE)/length(ID),            
+           has_homo_tr_fraction=sum(has_homo_tr==TRUE)/length(ID),
+           has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID),
+           has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), 
+           has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID),
+           mean_sequence_length=mean(Length), 
+           count=length(ID))
+
+head(sp)
+
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_tr_fraction, shape=Superkingdom)) + # colour=origin, shape=Superkingdom, size=log10(count)
+  geom_point(size = 3)+
+  scale_fill_manual(values=getPalette(colour_count)) + scale_size_continuous(range=c(2,7)) + #scale_colour_brewer(type=2, palette="RdYlBu")
+  geom_abline(intercept=0, slope=mean(sp$has_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  # ggtitle('All tandem repeats')+
+  labs(x="Mean Protein Length", 
+       y="Fraction of TR")+
+  # geom_label_repel(aes(label = origin),                     # textbox label
+  #                 direction = c("both"),
+  #                 label.size = NA,
+  #                 label
+  #                 box.padding   = 0.5, 
+  #                 point.padding = 0.4,
+  #                 segment.alpha = 0.5,
+  #                 segment.color = 'grey50')
+  geom_text_repel(aes(label = origin),                        # plain text label
+                  colour = "black")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_all", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+The amount of TRs (normalized by the total amount of protein entries of the species) is displayed as a function of the mean length of the proteins. The normalization was conducted, because not every species has the same number of entries of proteins in the Database (uniprot blabla) since some organisms such as model organisms are more heavily investigated than others.
+It can be seen, that mitochondrial proteins from Vridiplantae to which green algaes belong tend to have long proteins and many TRs. In contrast chloroplastic proteins tend to be short and with less proteins. 
+Let's look at them more in detail:
+
+
+examine the outliers further:
+```{r}
+#### NORMALIZATION IS NOT WORKING HERE....
+# # small proteins and small fraction of TRs
+# all_tr_outliers1 <- sp_all[which(sp_all$origin == "Chloroplastic (unknown)" & sp_all$has_tr == TRUE),]
+# all_tr_outliers1[order(all_tr_outliers1$Species),]
+# 
+# all_tr_outliers1 <- ddply(all_tr_outliers1, .(origin, Superkingdom, Kingdom, Species, protein_name), # count species occurences
+#            summarize,
+#            species_count=length(Species)/length(sp_all)) 
+# all_tr_outliers1 <- arrange(all_tr_outliers1, desc(species_count))
+# head(all_tr_outliers1)
+# 
+# # plot with geom_bar with own stats and ordered descending
+# p <- ggplot(all_tr_outliers1)+
+#   geom_bar(aes(reorder(Species, species_count), species_count), stat = "identity")+
+#   coord_flip()+
+#   ggtitle('All tandem repeats')+
+#   labs(x="Species", 
+#        y="Fraction of proteins with TRs",
+#        subtitle = "Chloroplastic (unknown)")
+# p <- beautifier(p)
+# p
+# # Look at which protein from red algae is most prominent
+# all_tr_outliers1_redalg <- all_tr_outliers1[which(all_tr_outliers1$Species == "Pyropia yezoensis (Red alga) (Porphyra yezoensis)"), ]
+# all_tr_outliers1_redalg[order(all_tr_outliers1_redalg$protein_name),]
+# head(all_tr_outliers1_redalg)
+#### REPORT ONLY ACTUAL NUMBERS THEREFORE...
+# small proteins and small fraction of TRs
+all_tr_outliers1 <- sp_all[which(sp_all$origin == "Chloroplastic (unknown)" & sp_all$has_tr == TRUE),]
+all_tr_outliers1[order(all_tr_outliers1$Species),]
+
+all_tr_outliers1 <- ddply(all_tr_outliers1, .(origin, Superkingdom, Kingdom, Species), # count species occurences
+           summarize,
+           species_count=length(Species)) 
+all_tr_outliers1 <- arrange(all_tr_outliers1, desc(species_count))
+head(all_tr_outliers1)
+
+# plot with geom_bar with own stats and ordered descending
+p <- ggplot(all_tr_outliers1)+
+  geom_bar(aes(reorder(Species, species_count), species_count), stat = "identity")+
+  coord_flip()+
+  ggtitle('All tandem repeats')+
+  labs(x="Species", 
+       y="No. of proteins with TRs",
+       subtitle = "Chloroplastic (unknown)")
+p <- beautifier(p)
+p
+
+# many proteins, and big fraction of TRs
+all_tr_outliers2 <- sp_all[which(sp_all$origin == "Mitochondrial (Viridiplantae)" & sp_all$has_tr == TRUE),]
+all_tr_outliers2[order(all_tr_outliers2$Species),]
+
+all_tr_outliers2 <- ddply(all_tr_outliers2, .(origin, Superkingdom, Kingdom, Species), 
+           summarize,
+           species_count=length(Species)) 
+all_tr_outliers2 <- arrange(all_tr_outliers2, desc(species_count))
+all_tr_outliers2 <- all_tr_outliers2[which(all_tr_outliers2$species_count>2),]
+head(all_tr_outliers2)
+
+# plot with geom_bar with own stats and ordered descending
+p <- ggplot(all_tr_outliers2)+
+  geom_bar(aes(reorder(Species, species_count), species_count), stat = "identity")+
+  coord_flip()+
+  ggtitle('All tandem repeats')+
+  labs(x="Species", 
+       y="No. of proteins with TRs",
+       subtitle = "Mitochondrial (Viridiplantae)")
+p <- beautifier(p)
+p <- paper.figure(p)
+p
+```
+Considering all kinds of TRs from a Chloroplastic origin, in red algae (P.yezoensis) the most proteins with TRs are found which belong to 30S and 50S ribosomal proteins.
+A. thaliana and O.Sativa (rice) seem to have the most TRs from viridiplantae's origin beeing part of the mitochondrium. (Non-normalized numbers -> absolut counts!).
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_homo_tr_fraction, shape=Superkingdom)) + # colour=origin, , size=log10(count)
+  geom_point(size = 3) +
+  geom_abline(intercept=0, slope=mean(sp$has_homo_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  labs(x="Mean Protein Length", 
+       y="Fraction of homo TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Homo tandem repeats')+
+  geom_text_repel(aes(label = origin),                        # plain text label
+                  colour = "black")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_homo", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_micro_tr_fraction, shape=Superkingdom)) + # colour=origin, , size=log10(count)
+  geom_point(size = 3) +
+  geom_abline(intercept=0, slope=mean(sp$has_micro_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  labs(x="Mean Protein Length", 
+       y="Fraction of micro TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Micro tandem repeats')+
+  geom_text_repel(aes(label = origin),                        # plain text label
+                  colour = "black")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_micro", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+examine the outlier:
+```{r}
+# many proteins, and big fraction of TRs
+micro_tr_outliers <- sp_all[which(sp_all$origin == "unknown (Eukaryota)" & sp_all$has_micro_tr == TRUE),]
+micro_tr_outliers[order(micro_tr_outliers$Species),]
+
+micro_tr_outliers <- ddply(micro_tr_outliers, .(origin, Superkingdom, Kingdom, Species), 
+           summarize,
+           species_count=length(Species)) 
+micro_tr_outliers <- arrange(micro_tr_outliers, desc(species_count))
+head(micro_tr_outliers)
+
+# plot with geom_bar with own stats and ordered descending
+p <- ggplot(micro_tr_outliers[which(micro_tr_outliers$species_count>10),])+  #display only those Species with more than 10 proteins with micro TRs
+  geom_bar(aes(reorder(Species, species_count), species_count), stat = "identity")+
+  coord_flip()+
+  ggtitle('Micro tandem repeats')+
+  labs(x="Species", 
+       y="No. of proteins with micro TRs",
+       subtitle = "unknown (Eukaryota)")
+p <- beautifier(p)
+p <- paper.figure(p)
+p
+```
+
+
+
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_short_tr_fraction, shape=Superkingdom)) + # colour=origin, , size=log10(count)
+  geom_point()+
+  geom_abline(intercept=0, slope=mean(sp$has_short_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of small TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Small tandem repeats')+
+  geom_text_repel(aes(label = origin),                        # plain text label
+                  colour = "black")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_short", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_domain_tr_fraction, shape=Superkingdom)) + #colour=origin, , size=log10(count)
+  geom_point()+
+  geom_abline(intercept=0, slope=mean(sp$has_domain_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of domain TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Domain tandem repeats')+
+  geom_text_repel(aes(label = origin),                        # plain text label
+                  colour = "black")
+p = beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_domain", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+Fig. 2a) Shown is the fraction of proteins with TRs as a function of sequence length. 
+
+examine the outlier:
+```{r}
+# big proteins, and big fraction of TRs
+domain_tr_outliers <- sp_all[which(sp_all$origin == "Mitochondrial (Viridiplantae)" & sp_all$has_domain_tr == TRUE),]
+domain_tr_outliers[order(domain_tr_outliers$Species),]
+
+domain_tr_outliers <- ddply(domain_tr_outliers, .(origin, Superkingdom, Kingdom, Species), 
+           summarize,
+           species_count=length(Species)) 
+domain_tr_outliers <- arrange(domain_tr_outliers, desc(species_count))
+head(domain_tr_outliers)
+
+# plot with geom_bar with own stats and ordered descending
+p <- ggplot(domain_tr_outliers[which(domain_tr_outliers$species_count>1),])+  #display only those Species with more than 1 proteins with domain TRs
+  geom_bar(aes(reorder(Species, species_count), species_count), stat = "identity")+
+  coord_flip()+
+  ggtitle('Domain tandem repeats')+
+  labs(x="Species", 
+       y="No. of proteins with domain TRs",
+       subtitle = "Mitochondrial (Viridiplantae)")
+p <- beautifier(p)
+p <- paper.figure(p)
+p
+```
+
+
+## Mean disorder content vs protein length
+### Fig 2b
+```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=7}
+protein_length_bin <-cut(sp_protein$Length, breaks = c(0, 50, 100, 300, 500, 1000, 1500, 2000, 3000, max(sp_protein$Length)), dig.lab=12)
+
+sp_protein$length_group = protein_length_bin
+sp_protein_bylength = ddply(sp_protein, .(length_group, origin, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, shape=Superkingdom, colour=origin, size=log(count)/10)) +
+  geom_point(alpha=0.5, show.legend=TRUE) + 
+  ylim(0,1.0) + 
+  geom_line(aes(group=origin), size=0.3)+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size = 2)) + # size = 8
+  labs(y="Mean disorder content",
+       x="Protein Length")
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2b", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=7}
+sp_protein_bylength = ddply(sp_protein, .(length_group, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, colour=Superkingdom, size=log10(count))) + 
+  geom_point(alpha=0.5, show.legend=TRUE) + 
+  ylim(0,1.0) + 
+  geom_line(aes(group=Superkingdom), size=0.3)
+p = p + theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=8)) +
+  labs(y="Mean disorder content",
+       x="Protein Length")
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig2b_simple", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+# TR center location
+## unnormalized
+### Fig. 3a
+- replace repeat_type_bin with TR_type  
+- 
+```{r eval=FALSE, fig.height=9, fig.width=10, message=FALSE, warning=FALSE, include=FALSE}
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0,3, 15, 2000), dig.lab = 12))
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin, fill=repeat_type_bin)) +
+    geom_density(alpha=.5) + facet_wrap(~ Superkingdom, scales = "free")
+p = beautifier(p) +
+  # theme(strip.text = element_text(size=10),
+  #       legend.text = element_text(size=20),
+  #       legend.title = element_text(size=30),
+  #       axis.text = element_text(size=15)) +
+  theme(strip.text = element_text(),
+        legend.text = element_text(),
+        legend.title = element_text(),
+        axis.text = element_text()) +
+  labs(x="TR center location (center/Length)",
+       y="Density",
+       fill=expression(l[effective])) +
+  guides(color=F) # disable color axis
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig3a", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+Fig. 3a) Shown are density plots for the relative positions of tandem repeats (TRs) within the protein for four Superkindoms. Colours indicate repeat unit lengths. Interestingly, short TRs are biased towards the flanks of the protein. In particular for Eukaryotes, there is a clear correlation between TR unit length and location bias to the protein flanks. For Eukaryotes, tandem repeats are particularly prevalent in the N-terminal protein flank. Homorepeats in Archaea and, to a lesser degree, Bacteria show a strong bias to the C-terminal protein flank. 
+
+
+### all 
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0,3, 15, 2000), dig.lab = 12))
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin, fill=repeat_type_bin)) +
+    geom_density(size=1, alpha=.5) +
+  scale_color_manual( values = c("grey","violet","turquoise4"), name  ="TR type", breaks=c("(0,3]","(3,15]", "(15,2000]"),labels=c("Micro", "Small","Domain")) +
+  scale_fill_manual( values = c("grey","violet","turquoise4"), name  ="TR type", breaks=c("(0,3]","(3,15]", "(15,2000]"),labels=c("Micro", "Small","Domain")) +
+labs(x="TR center location (center/Length)", y="Density") 
+p = p + theme_minimal(base_size = 10)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig3a_all", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+## normalized
+The center-bias for domain TRs comes from boundary effects from the simple center/Length metric employed; if the TR covers a significant fraction of the protein, then it's center necessarily falls near the middle. We can compensate for this by normalizing over only the valid center locations:
+
+$$
+x = \frac{center - l_{eff}*n_{eff}/2}{N-l_{eff}*n_{eff}}
+$$
+
+
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+# renormalized version accounting for true length
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0,3, 15, 2000), dig.lab = 12))
+
+tr_all_sp_positions <- tr_all_sp %>%
+  transmute(repeat_type_bin,
+            Superkingdom,
+            center=round(center), 
+            Length=round(Length), 
+            total_repeat_length=round(total_repeat_length)) %>%
+  mutate(usableLen = Length - total_repeat_length,
+         pos = (center-ceiling(total_repeat_length/2))/usableLen) %>%
+  filter(usableLen > 0) %>% #otherwise causes NaN or Inf
+  tbl_df
+summary(tr_all_sp_positions)
+summary(tr_all_sp_positions[which(tr_all_sp_positions$Superkingdom == "Viruses"),]) #limited number of observations for viruses and archaea
+summary(tr_all_sp_positions[which(tr_all_sp_positions$Superkingdom == "Archaea"),]) #limited number of observations for viruses and archaea
+
+# possible bug: some centers lie outside the usable length
+tr_all_sp_positions %>% 
+  mutate(diff= center - floor(Length+1/2 - total_repeat_length/2)) %>%
+  arrange(-pos) %>% 
+  top_n(1,diff) %>%
+  invisible
+
+# cols <- brewer.pal(3, "Dark2")
+cols1 <- c("#AA3939", "#AA7939", "#29506D") #c("#801515", "#805215", "#123652") #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+cols2 <- c("#FFAAAA", "#FFDBAA", "#718EA4") #c("#AA3939", "#AA7939", "#29506D")
+p = ggplot(tr_all_sp_positions %>% filter(pos <= 1), aes(x = pos, colour=repeat_type_bin, fill=repeat_type_bin)) +
+  geom_density(alpha=.7) +
+  scale_color_manual( values = cols1, #values = c("grey","violet","turquoise4"), 
+                      name  ="TR type", 
+                      breaks=c("(0,3]","(3,15]", "(15,2000]"),
+                      labels=c("Micro", "Small","Domain")) +
+  scale_fill_manual( values = cols2, 
+                     name  ="TR type", 
+                     breaks=c("(0,3]","(3,15]", "(15,2000]"),
+                     labels=c("Micro", "Small","Domain")) +
+  labs(x="TR center location", y="Density") 
+p <- beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig3a_all_renormalized", figureFormat), width=12, height=8, dpi = 300)
+}
+
+
+
+p = ggplot(tr_all_sp_positions %>% filter(pos <= 1), aes(x = pos, colour=repeat_type_bin, fill=repeat_type_bin)) +
+  geom_density(alpha=.7)+
+  facet_wrap(~ Superkingdom, scales = "free")+
+  scale_color_manual( values = cols1, #values = c("grey","violet","turquoise4"),
+                      name  ="TR type",
+                      breaks=c("(0,3]","(3,15]", "(15,2000]"),
+                      labels=c("Micro", "Small","Domain")) +
+  scale_fill_manual( values = cols2,
+                     name  ="TR type",
+                     breaks=c("(0,3]","(3,15]", "(15,2000]"),
+                     labels=c("Micro", "Small","Domain")) +
+  labs(x="TR center location", y="Density") 
+p <- beautifier(p)
+p <- paper.figure(p)
+p
+if( save) {
+    ggsave(paste0(pathImages, "fig3a_Superkingdoms_renormalized", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+# TR clustering of PFAM domains
+-> see file pfam_clans_analysis.R
+### Distribution of PFAM domain annotations in the superkingdoms, kingdoms, and across mitochondiral and chloroplastic genes (~ Fig4. Marcotte et al.).
+```{r, echo=TRUE, eval=TRUE}
+d_sub = subset(tr_all_sp, TRD=="PFAM")
+
+d = ddply(d_sub, .(Superkingdom, is_chloroplastic, is_mitochondrial, model), summarize, count=length(ID))
+d_cut = subset(d, Superkingdom=="Bacteria")
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Archaea")
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Viruses")
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d = ddply(d_sub, .(Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial, model), summarize, count=length(ID))
+d_cut = subset(d, Superkingdom=="Eukaryota" & Kingdom == "Viridiplantae" & is_mitochondrial==FALSE & is_chloroplastic==FALSE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Eukaryota" & Kingdom == "Metazoa" & is_mitochondrial==FALSE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, Superkingdom=="Eukaryota" & Kingdom == "Fungi" & is_mitochondrial==FALSE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d = ddply(d_sub, .(is_chloroplastic, is_mitochondrial, model), summarize, count=length(ID))
+d_cut = subset(d, is_mitochondrial==TRUE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+
+d_cut = subset(d, is_chloroplastic==TRUE)
+d_cut[order(d_cut$count,decreasing=T)[1:10],]
+```
+
+### Dowload PFAM mapping
+```{r}
+# download.file("ftp://ftp.ebi.ac.uk/pub/databases/Pfam/mappings/pdb_pfam_mapping.txt", destfile = "/home/matteo/polybox/MSc_ACLS/swissrepeat/results/pdb_pfam_mapping.txt")
+```
+
+
+#################################### 
+#### TODO To be continued from here
+#################################### 
+
+### Fig. 3b 
+TODO correct normalization!!!
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+# renormalized version accounting for true length
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0,3, 15, 2000), dig.lab = 12))
+
+tr_all_sp_positions <- tr_all_sp %>%
+  transmute(repeat_type_bin,
+            Superkingdom,
+            center=round(center), 
+            Length=round(Length), 
+            total_repeat_length=round(total_repeat_length)) %>%
+  mutate(usableLen = Length - total_repeat_length,
+         pos = (center-ceiling(total_repeat_length/2))/usableLen) %>%
+  filter(usableLen > 0) %>% #otherwise causes NaN or Inf
+  tbl_df
+
+
+
+
+
+
+
+
+discoor_all_sp$disorder_length_bin <-with(discoor_all_sp , cut(disorder_region_length, breaks = c(0, 30, max(discoor_all_sp$disorder_region_length)), dig.lab = 12))
+discoor_all_sp_positions <- discoor_all_sp %>%
+  transmute(disorder_length_bin,
+            Superkingdom,
+            center=round(center), 
+            Length=round(disorder_region_length), 
+            total_repeat_length=round(total_repeat_length)) %>%
+  mutate(usableLen = Length - total_repeat_length,
+         pos = (center-ceiling(total_repeat_length/2))/usableLen) %>%
+  filter(usableLen > 0) %>% #otherwise causes NaN or Inf
+  tbl_df
+
+
+p = ggplot(discoor_all_sp, aes(x = center/Length, colour=disorder_length_bin, fill=disorder_length_bin)) +
+    geom_density(alpha=.5) + 
+  facet_wrap(~ Superkingdom, scales = "free")
+#p = beautifier(p)
+p = p +
+  labs(x="Disorder center location (center/Length)",
+       colour="Disorder length",
+       fill="Disorder length")
+if( save) {
+    ggsave(paste0(pathImages, "fig3b", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 3b) Density plots of position of disorder regions within the protein for four Superkingdoms. Both short and long disorder regions tend to cluster towards the flank of the protein, to the N-terminal specifically, with the trend being somewhat weaker in Eukaryotes.
+
+### Fig. 4a
+```{r, warning=FALSE, echo=FALSE, eval=TRUE, fig.width=10, fig.height=5}
+p = ggplot(tr_all_sp, aes(x=fraction_disordered_chars, colour=Superkingdom, fill=Superkingdom)) +
+  geom_density(alpha=.5) # + geom_histogram(aes(y=..density..),position="dodge",alpha=.5, bins=10)
+p = p + facet_wrap(~ factor(l_type, levels=c("homo", "micro","small","domain")), scales = "free") +
+  labs(x="Fraction of disordered AA in TRs")
+
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig4a", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+
+```
+Fig. 4a) Shown is the fraction of disorderd residues for micro TRs, small TRs and domain TRs. We see clearly bimodal distributions, with the majority TRs mostly ordered, however with a striking fraction of small TRs and micro TRs mostly disordered.
+
+# Homorepeats
+```{r}
+nrow(tr_all_sp)
+nrow(homo_all)
+
+nrow(homo_all)/nrow(tr_all_sp)
+
+nrow(homo_all[which(homo_all$Kingdom == "Eukaryota"),])/nrow(tr_all_sp)
+
+nrow(homo_all[which(homo_all$Kingdom == "Eukaryota"),])/nrow(tr_all_sp[which(tr_all_sp$Superkingdom == "Eukaryota"),])
+
+nrow(homo_all[which(homo_all$Kingdom == "Eukaryota"),])/nrow(homo_all)
+
+str(sp_all)
+```
+
+
+### Fig. 5a
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=5}
+homo_q = subset(homo_all, aa %in% c("N", "Q", "S", "E") & type == "empirical")
+p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=aa)) + geom_point()
+p = p + facet_wrap(~ Kingdom, scales = "free")
+p = p + ggtitle('Empirical data')
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig5a", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5a). Count of homorepeats in Swiss-Prot in four Superkingdoms for different repeat unit number ($n <= 50$, equivalent to repeat length) for amino acids E, S, N and Q. Homorepeats with large $n$ seem to mostly pertain to the Eukaryotes. 
+
+### Fig. 5b
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=6}
+# Plot empirical vs expected counts
+show_homorepeat_counts <- function(data, kingdom, nmin, nmax){
+  homo_sub = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax)
+  p = ggplot(homo_sub, aes(x=n, y=log10_count_rounded, colour=type)) + geom_point(size=1.5)
+  p = p + facet_wrap(~ aa)
+  beautifier(p)
+}
+
+p = show_homorepeat_counts(homo_all, "Eukaryota", 1, 50)
+if( save) {
+    ggsave(paste0(pathImages, "fig5b", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5b). Empirical and expected count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$). Amino acids are ordered by their propensity to promote structural order.
+
+
+### Fig. 5c
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=6}
+# Plot empirical counts for order vs disorder.
+n_chars_swiss_prot = sum(homo_all[homo_all$type=="empirical","repeat_region_length"])
+homo_all$set = "all"
+homo_d_all$set = "disorder"
+homo_o_all$set= "order"
+homo_all$count_relative_sequence_length = homo_all$count
+homo_d_all$count_relative_sequence_length = homo_d_all$count/sum(homo_d_all[homo_d_all$type=="empirical","repeat_region_length"]) * n_chars_swiss_prot
+homo_o_all$count_relative_sequence_length = homo_o_all$count/sum(homo_o_all[homo_o_all$type=="empirical","repeat_region_length"]) * n_chars_swiss_prot
+
+homo = rbind(homo_all, homo_d_all, homo_o_all)
+homo$set = as.factor(homo$set)
+homo$log10_count_relative_sequence_length = log10(homo$count_relative_sequence_length)
+
+show_empirical_homorepeat_counts_relative_to_total_seq_length <- function(data, kingdom, nmin, nmax){
+  homo_empirical = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax & set != "all" & type == "empirical")
+  p = ggplot(homo_empirical, aes(x=n, y=log10_count_relative_sequence_length, colour=set)) + geom_point(size=1.5)
+  p = p + facet_wrap(~ aa)
+  #p = p + scale_y_continuous(limits = c(0, 10))
+  p = p + scale_x_continuous(breaks = (seq(nmin, nmax, by = round((nmax/max(nmin,1))/5))))
+  p = p + geom_hline(yintercept=0)
+  beautifier(p)
+}
+
+p = show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Eukaryota", 0, 50)
+if( save) {
+    ggsave(paste0(pathImages, "fig5c", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5c). Empirical count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$) for ordered and disordered regions (consensus MobiDB annotations, no minimum length cut-off.). Amino acids are ordered by their propensity to promote structural order.
+
+
+
+
+# Amino Acid frequency distribution 
+aa-freq determination:
+```{r}
+getAAfreq <- FALSE
+if(getAAfreq){
+  
+## Count all AAs in all TRs
+aa_freq <- mclapply(tr_all_sp$MSA, 
+                    function(i){alphabetFrequency(AAString(i))},
+                    mc.cores = numcores)
+aa_freq <-  Reduce(`+`, aa_freq)
+
+dfTR  <- as.data.frame(aa_freq)
+dfTR$aa <- rownames(dfTR)
+# Remove NAs (*,-,.,+)
+dfTR <- subset(dfTR, !(dfTR$aa %in% aa_ignore)) #TODO add 
+# Calculate aa composition ratio in TR
+for (i in 1:nrow(dfTR)){
+  dfTR$aa_ratio_tr[i] <- round(dfTR$aa_freq[i]/sum(dfTR$aa_freq), 3)
+}
+colnames(dfTR) <- c("aa_freq_tr", "aa", "aa_ratio_tr")
+
+
+## Count all AAs in all swissprots
+# Read gzip-compressed FASTA file:
+aa_SP <- readAAStringSet("/home/matteo/polybox/MSc_ACLS/swissrepeat/data/uniprot_sprot.fasta.gz")
+# Count all AA in each protein
+dfSP <- mclapply(aa_SP, 
+                 alphabetFrequency, 
+                 mc.cores = numcores) # NOTE: Takes few minutes
+# sum AA frequency over all proteins
+dfSP <- Reduce(`+`, dfSP)
+
+dfSP  <- as.data.frame(dfSP)
+dfSP$aa <- rownames(dfSP)
+colnames(dfSP) <- c("aa_freq_sp", "aa") # For some reason this is needed here for subset below...
+# Remove NAs (*,-,.,+)
+dfSP <- subset(dfSP, !(dfSP[, 2] %in% aa_ignore))
+# Calculate aa composition ratio in Proteinsequences
+for (i in 1:nrow(dfSP)){
+  dfSP[i,3] <- round(dfSP[i, 1]/sum(dfSP[1]), 3)
+}
+colnames(dfSP) <- c("aa_freq_sp", "aa", "aa_ratio_sp")
+# Check to aa composition given in statistics from Swissprot proteins (https://web.expasy.org/docs/relnotes/relstat.html)
+# dfSP$aa_ratio_sp_stats <- c(8.25, 5.53, 4.05, 5.46, 1.38, 3.93, 6.73, 7.07, 2.27, 5.92, 9.65, 5.81, 2.41, 3.86, 4.73, 6.62, 5.35, 1.09, 2.92, 6.86, NA, NA, 0, 0, 0)/100
+
+## Count all AAs in all Swissprot w/o TRs
+# select all AAs w/o TRs
+aa_SP <- as.data.frame(aa_SP)
+temp <- mclapply(row.names(aa_SP),
+                 function(i){
+                   strsplit(i, split = "|", fixed = TRUE)})
+temp <- unlist(temp)
+registerDoParallel(numcores)
+aa_SP$ID <- foreach(i = seq(from = 2, to = length(temp), by=3),
+                    .combine = rbind) %dopar% {
+    temp[i]
+  }
+stopImplicitCluster()
+
+dfnegSP <- aa_SP[which(aa_SP$ID %!in% tr_all$ID),]
+
+# Count all AA in each protein
+dfnegSP <- mclapply(dfnegSP$x, 
+                    function(i){alphabetFrequency(AAString(i))},
+                    mc.cores = numcores)
+# sum AA frequency over all proteins
+dfnegSP <- Reduce(`+`, dfnegSP)
+
+dfnegSP  <- as.data.frame(dfnegSP)
+dfnegSP$aa <- rownames(dfnegSP)
+colnames(dfnegSP) <- c("aa_freq_sp", "aa") # For some reason this is needed here for subset below...
+# Remove NAs (*,-,.,+)
+dfnegSP <- subset(dfnegSP, !(dfnegSP[,2] %in% aa_ignore))
+# Calculate aa composition ratio in Proteinsequences
+for (i in 1:nrow(dfnegSP)){
+  dfnegSP[i,3] <- round(dfnegSP[i, 1]/sum(dfnegSP[1]), 3)
+}
+colnames(dfnegSP) <- c("aa_freq_negsp", "aa", "aa_ratio_negsp")
+
+
+## Combine all data toghether
+# Combine dfSP and dfTR (AA frequency distribution within TRs)
+df <- merge(x = dfSP, y=dfTR, by= "aa")
+# add dfnegSP
+df <- cbind(df, dfnegSP$aa_freq_negsp, dfnegSP$aa_ratio_negsp)
+colnames(df) <- c( "aa", "aa_freq_sp", "aa_ratio_sp", "aa_freq_tr", "aa_ratio_tr", "aa_freq_negsp", "aa_ratio_negsp")
+# Sort AA according to their disorder promoting potential
+df <- df[match(aa_order_promoting_to_disorder_promoting, df$aa),]
+
+# save for later use
+write.csv(df, file = paste0(local_base_path, "/data/aa_count.csv"), row.names = df$aa)
+}
+
+# load AA counts
+df <- read.csv(paste0(local_base_path, "/data/aa_count.csv"), header = TRUE)
+df <- df[,-1]
+# Encode the order of the AA as increasing factor
+df$aafac <- seq(1, length(df$aa))
+# Add the disorder propensity from Uversky paper
+df$disorderpropensity <- c(0.00, 0.004, 0.090, 0.113, 0.117, 0.195, 0.259, 0.263, 0.285, 0.291, 0.394, 0.401, 0.407, 0.437, 0.450, 0.588,0.665,0.713, 0.781,1.000, NA, NA, NA, NA, NA)
+# calculate disorder propensity manually
+#TODO
+
+## from wide to long format
+dfRatio.long <- df %>%
+  gather(ratio_source, aa_ratio, -c("aa", "aa_freq_sp", "aa_freq_tr", "aa_freq_negsp", "aafac", "disorderpropensity"))
+# change labelling
+dfRatio.long$ratio_source <- replace(dfRatio.long$ratio_source, dfRatio.long$ratio_source =="aa_ratio_sp", "all Swissprots")
+dfRatio.long$ratio_source <- replace(dfRatio.long$ratio_source, dfRatio.long$ratio_source =="aa_ratio_tr", "only TRs")
+dfRatio.long$ratio_source <- replace(dfRatio.long$ratio_source, dfRatio.long$ratio_source =="aa_ratio_negsp", "all Swissprots w/o TRs")
+dfRatio.long <- dfRatio.long[,-c(2:4)]
+
+dfFreq.long <- df %>%
+  gather(freq_source, aa_freq, -c("aa", "aa_ratio_sp", "aa_ratio_tr", "aa_ratio_negsp", "aafac", "disorderpropensity"))
+# change labelling
+dfFreq.long$freq_source <- replace(dfFreq.long$freq_source, dfFreq.long$freq_source =="aa_freq_sp", "all Swissprots")
+dfFreq.long$freq_source <- replace(dfFreq.long$freq_source, dfFreq.long$freq_source =="aa_freq_tr", "only TRs")
+dfFreq.long$freq_source <- replace(dfFreq.long$freq_source, dfFreq.long$freq_source =="aa_freq_negsp", "all Swissprots w/o TRs")
+dfFreq.long <- dfFreq.long[, -c(2:4)]
+```
+## AA Frequency
+
+### Frequency plots: Explicit number of AA occuring in the specific region (either TR or the whole protein)
+AA frequency in TR region vs. disorder propensity
+```{r}
+model.lm.tr <- lm(aa_freq_tr ~ disorderpropensity, data = df)
+summary(model.lm.tr)
+
+# labelling good, geom_smooth bad
+p1 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_freq_tr))+
+  scale_x_discrete(labels = as.character(df$aa),
+                     breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_freq_tr), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency in TR")+
+  theme_minimal()
+p1 <- beautifier(p1)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p1
+
+##### 
+# # labelling bad, geom_smooth good
+# p1 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_tr))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm")+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in TR")+
+#   theme_minimal()
+# p1 <- beautifier(p1)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+# p1
+# 
+# # other approach with abline
+# p1 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_tr))+
+#   geom_point()+
+#   scale_x_continuous(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   geom_abline(intercept = coefficients(model.lm.tr)[1], slope = coefficients(model.lm.tr)[2])+
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in TR")+
+#   theme_minimal()
+# p1 <- beautifier(p1)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1, vjust = 0.5))
+# p1
+# 
+# # other approach with geom_stats
+# p1 <- ggplot(df, aes(x = as.factor(disorderpropensity), y = aa_freq_tr))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm", aes(group = "C"))+
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in TR")+
+#   theme_minimal()
+# p1 <- beautifier(p1)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1, vjust = 0.5))
+# p1
+#####
+if( save) {
+    ggsave(paste0(pathImages, "AA_frequencyTR_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+AA frequency in all Swissprots vs. disorder propensity
+```{r}
+model.lm.sp <- lm(aa_freq_sp ~ disorderpropensity, data = df)
+summary(model.lm.sp)
+
+# labelling good, geom_smooth bad
+p2 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_freq_sp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                     breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_freq_sp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency in all Swissprot")+
+  theme_minimal()
+p2 <- beautifier(p2)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p2
+
+#####
+# # labelling bad, geom_smooth good
+# p2 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_sp))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm")+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in all Swissprot")+
+#   theme_minimal()
+# p2 <- beautifier(p2)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+# p2
+######
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_frequencySP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+AA frequency in all Swissprot w/o TRs vs. disorder propensity
+```{r}
+model.lm.negsp <- lm(aa_freq_negsp ~ disorderpropensity, data = df)
+summary(model.lm.negsp)
+
+# labelling good, geom_smooth bad
+p3 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_freq_negsp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                     breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_freq_negsp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency in all Swissprot w/o TRs")+
+  theme_minimal()
+p3 <- beautifier(p3)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p3
+
+#####
+# # labelling bad, geom_smooth good
+# p3 <- ggplot(df, aes(x = disorderpropensity, y = aa_freq_negsp))+
+#   geom_point()+
+#   scale_x_discrete(labels = as.character(df$aa),
+#                      breaks = df$disorderpropensity)+
+#   stat_smooth(method = "lm")+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency in all Swissprot w/o TRs")+
+#   theme_minimal()
+# p3 <- beautifier(p3)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+# p3
+#####
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_frequencynegSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+
+model <- lm(dfFreq.long$aa_freq~dfFreq.long$aafac, dfFreq.long[which(dfFreq.long$aa_freq > 10000),])
+p <- ggplot(dfFreq.long, aes(x = dfFreq.long$aa, y = dfFreq.long$aa_freq))+
+  facet_wrap(~freq_source, scales = "free")+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfFreq.long$freq_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Frequency")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))+
+  scale_color_manual(values = cols1,
+                      name  ="AA sources",
+                      breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                      labels=c("all Swissprots", "only TRs")) +
+  scale_fill_manual(values = cols1,
+                    name  ="AA sources",
+                      breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                      labels=c("all Swissprots", "only TRs"))
+p
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_frequency_facet", figureFormat), width=12, height=8, dpi = 300)
+}
+
+#####
+# # model <- lm(dfFreq.long$aa_freq~dfFreq.long$aa, dfFreq.long)
+# # model <- lm(dfFreq.long$aa_freq~dfFreq.long$aafac, dfFreq.long)
+# model <- lm(df$aa_freq_tr ~ df$disorderpropensity, data = df) # This works for "all swissprots", however not for the others. Check in single plots first!
+# summary(lm(aa_freq_tr ~ disorderpropensity, data = df))
+# p <- ggplot(dfFreq.long, aes(x = dfFreq.long$aa, y = dfFreq.long$aa_freq))+
+#   facet_wrap(~freq_source, scales = "free")+
+#   geom_point()+
+#   scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+#   # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+#   # stat_smooth(method = "lm", aes(group = dfFreq.long$freq_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+#   labs(x ="Amino Acid",
+#        y = "AA Frequency")+
+#   theme_minimal()
+# p <- beautifier(p)+
+#   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))+
+#   scale_color_manual(values = cols1,
+#                       name  ="AA sources",
+#                       breaks=c("aa_ratio_sp","aa_ratio_tr"),
+#                       labels=c("all Swissprots", "only TRs")) +
+#   scale_fill_manual(values = cols1,
+#                     name  ="AA sources",
+#                       breaks=c("aa_ratio_sp","aa_ratio_tr"),
+#                       labels=c("all Swissprots", "only TRs"))
+# p
+```
+The frequency of each AA (ordered by their decreasing order-promoting potential (top: ordered, bottom: disordered)) from all TR containing proteins.
+Disorder promoting residues occur more frequently in TR than oder promoting.
+
+From Uversky2013: 
+In fact, in comparison with ordered pro-
+teins, IDPs/IDPRs are characterized by noticeable biases in their 
+amino acid compositions, containing less of so-called 
+“order-promoting” residues (cysteine, tryptophan, isoleucine, 
+tyrosine, phenylalanine, leucine, histidine, valine, asparagines 
+and methionine, which are mostly hydrophobic residues which 
+are commonly found within the hydrophobic cores of foldable 
+proteins) and more of “disorder-promoting” residues (lysine, 
+glutamine, serine, glutamic acid and proline, which are mostly 
+polar and charged residues, which are typically located at the 
+surface of foldable proteins)
+
+
+INTERPRETATION: 
+Amino acids ordered according to their increasing disorder propensity (form uversky paper) show a significant linear relationship to their abundance in TR regions (p-value 0.00494 and R^2 = 0.32). However they don't show a significant linear relationship over all proteins in SwissProtKB (p-value = 0.2942, R^2 = 0.0087) and neither over all proteins which don't have TRs (p-value=0.00494, R^2=0.3275).
+NOTE: try different model?
+
+## AA Ratio 
+```{r}
+model.lm.tr.ratio <- lm(aa_ratio_tr ~ disorderpropensity, data = df)
+summary(model.lm.tr.ratio)
+
+model.lm.sp.ratio <- lm(aa_ratio_sp ~ disorderpropensity, data = df)
+summary(model.lm.sp.ratio)
+
+model.lm.negsp.ratio <- lm(aa_ratio_negsp ~ disorderpropensity, data = df)
+summary(model.lm.negsp.ratio)
+```
+
+### Ratio plots: Ratio of #AAx/sum(of all AA in the protein or TR)
+AA ratio in TR region vs. disorder propensity
+```{r}
+model.lm.tr <- lm(aa_ratio_tr ~ disorderpropensity, data = df)
+summary(model.lm.tr)
+
+# labelling good, geom_smooth bad
+p1 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_tr))+
+  scale_x_discrete(labels = as.character(df$aa),
+                     breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_tr), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in TR")+
+  theme_minimal()
+p1 <- beautifier(p1)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p1
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_ratioTR_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+AA ratio in all Swissprots vs. disorder propensity
+```{r}
+model.lm.sp <- lm(aa_ratio_sp ~ disorderpropensity, data = df)
+summary(model.lm.sp)
+
+# labelling good, geom_smooth bad
+p2 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_sp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                     breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_sp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in all Swissprot")+
+  theme_minimal()
+p2 <- beautifier(p2)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p2
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_ratioSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+
+AA ratio in all Swissprot w/o TRs vs. disorder propensity
+```{r}
+model.lm.negsp <- lm(aa_ratio_negsp ~ disorderpropensity, data = df)
+summary(model.lm.negsp)
+
+# labelling good, geom_smooth bad
+p3 <- ggplot(df)+
+  geom_point(aes(x = as.factor(disorderpropensity), y = aa_ratio_negsp))+
+  scale_x_discrete(labels = as.character(df$aa),
+                     breaks = df$disorderpropensity)+
+  # stat_smooth(method = "lm", 
+  #             data = df, aes(x = disorderpropensity, y = aa_ratio_negsp), 
+  #             se = F)+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA ratio in all Swissprot w/o TRs")+
+  theme_minimal()
+p3 <- beautifier(p3)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
+p3
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_rationegSP_scatter", figureFormat), width=12, height=8, dpi = 300)
+}
+
+model <- lm(dfRatio.long$aa_ratio~dfRatio.long$aafac, dfRatio.long)
+p <- ggplot(dfRatio.long, aes(x = dfRatio.long$aa, y = dfRatio.long$aa_ratio))+
+  facet_wrap(~ratio_source, scales = "free")+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfRatio.long$ratio_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Ratio")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1))+
+  scale_color_manual(values = cols1,
+                      name  ="AA sources",
+                      breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                      labels=c("all Swissprots", "only TRs")) +
+  scale_fill_manual(values = cols1,
+                    name  ="AA sources",
+                      breaks=c("aa_ratio_sp","aa_ratio_tr"),
+                      labels=c("all Swissprots", "only TRs"))
+p
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_ratio_facet", figureFormat), width=12, height=8, dpi = 300)
+}
+
+p5 <- ggplot(dfRatio.long, aes(x = dfRatio.long$aa, y = dfRatio.long$aa_ratio, color = dfRatio.long$ratio_source))+
+  geom_point()+
+  scale_x_discrete(limits = aa_order_promoting_to_disorder_promoting)+
+  # geom_abline(intercept = coefficients(model)[1], slope = coefficients(model)[2])+
+  # stat_smooth(method = "lm", aes(group = dfRatio.long$ratio_source))+ # TODO: fix appearance of stat_smooth or geom_smooth
+  labs(x ="Amino Acid",
+       y = "AA Ratio")+
+  theme_minimal()
+p5 <- beautifier(p5)+
+  theme(axis.text.x = element_text(angle = 0, hjust = 1.1),
+        legend.position = "right")+
+  scale_color_manual(values = cols1,
+                     name = "Source")
+p5
+
+if( save) {
+    ggsave(paste0(pathImages, "AA_ratio_scatterall", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+
+
+
+# Virus Virus-host relation
+Label each TR with a TR_identifier.
+```{r TR_id}
+## Problem: one Protein can have several TRs. To know (later when dataframe in long format) how many TRs a protein has, label them with an identifier.
+# nrow(tr_all_sp) # number of TRs
+# length(unique(tr_all_sp$ID)) # number of proteins with TRs
+tr_all_sp <- tr_all_sp %>% 
+  mutate(TR_id = row_number())
+
+str(tr_all_sp)
+```
+
+From all Tandem Repeats, select only those which are viral (Superkingdom = Viruses) and have a known Virushost.
+```{r virus summary statistics}
+# filter all tandem repeat containing proteins from Swissprot which have annotated virushosts
+tr_all_sp_virus <- tr_all_sp[!(tr_all_sp$virus_hosts == ""),]
+(tr_all_sp_virus[, c(1, 22, 26)])
+tr_all_sp_virus[(tr_all_sp_virus$ID == "A1XIP9"), ]
+str(tr_all_sp_virus)
+
+#---Viral Proteins in general
+# no. of viral proteins in Swissprot
+length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))
+nrow(sp_all[which(sp_all$Superkingdom == "Viruses"),])
+
+# no. of viral proteins in Swissprot containing TRs
+length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")]))
+
+# no. of TRs found in viral proteins in Swissprot 
+nrow(tr_all_sp[which(tr_all_sp$Superkingdom == "Viruses"),])
+
+# contingency table of all TR sequences found in viral proteins. 
+tr_all_sp_virus$ID <- factor(tr_all_sp_virus$ID, levels = unique(tr_all_sp_virus$ID)) # drop unused levels
+table(table(tr_all_sp_virus$ID))
+
+#---Viral Proteins with annotated host
+# no. of viral proteins in Swissprot with annotated virus host
+length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses" & !sp_all$virus_hosts == "" & !is.na(sp_all$virus_hosts))]))
+
+# no. of viral proteins in Swissprot containing TRs and annotated virus hosts
+length(unique(tr_all_sp_virus$ID))
+
+# no. of TRs found in viral proteins and annotated virus hosts
+length(tr_all_sp_virus$ID)
+
+#---Simple statistics
+# % of viral proteins all viral proteins in swissprot
+round(
+  length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")])) / length(unique(sp_all$ID)), 3)
+
+# % of viral proteins with 1 TR of all viral proteins in swissprot
+round(
+  length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")])) / length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")])), 3)
+
+# % of viral proteins with >= 4 TR of all viral proteins in swissprot
+morethan4 <- subset(data.frame(table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")])), Freq >= 4)
+round(
+  nrow(morethan4) / length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")])), 3)
+```
+Of the 16605 viral proteins in Swissprot KB, 7237 viral proteins contain at least one TR. In total we could detect 13337 TR-regions in viral proteins. (this info is already summarized in the table). We found further that of the 7237 viral proteins with TRs, 4227 have 1 TR, 1622 have 2TRs, 667 have 3TRs.
+Almost all viral proteins from Swissprot were annotated with the viral host (16531 proteins) and of those, 7197 contain at least one TR. Overall we could find 13263 TR-regions with annotated viral host.
+Of all curated proteins in Swissprot, 3% come from viruses. From all viral proteins, 43.6% contain at least one TR and 4.1% contain $\geq 4$ TR.
+NOTE: (200) more viral proteins and ~2000 proteins with TR less detected than julia msc thesis 
+
+
+
+Viral TRs can be found in multiple species. To get a tidy list, we put each host species in a single row and add two more columns, namely the Species taxonomic identifier of which the Superkingdom is determined by calling the NCBI Taxonomic Database.
+```{r virus-virushost}
+## split the TR with multiple virus-hosts to get single entries for each virus host
+tr_all_sp_virus.long <- tr_all_sp_virus %>%
+  mutate(virus_hosts = strsplit(as.character(virus_hosts), "; ")) %>%
+  unnest(virus_hosts)
+
+## add column with virus_host_superkingdom: found by Species ID 
+tr_all_sp_virus.long$Species_ID_virushost <- as.numeric(gsub("\\D", "", tr_all_sp_virus.long$virus_hosts)) # extract the TaxID from each virushost and add it as a seperate column
+# tr_all_sp_virus.long$Superkingdom_virushost <- simplify2array(
+#   mclapply(tr_all_sp_virus.long$Species_ID_virushost, FUN = function(x){
+#     ifelse(x %in% sp_all$Species_ID, sp_all$Superkingdom[which(sp_all$Species_ID == x)], NA)},
+#     mc.cores = 7))
+#NOTE: works, but gives many NAs as it relies on the the species listed in swissprot.
+
+## add column with virus_host_superkingdom: found in NCBI https://www.ncbi.nlm.nih.gov/Taxonomy/TaxIdentifier/tax_identifier.cgi
+# write_csv(as.data.frame(tr_all_sp_virus.long$Species_ID_virushost), "/home/matteo/polybox/MSc_ACLS/swissrepeat/data/species_id_virushost2lineage.csv", col_names = FALSE)
+#NOTE: Server crashed when manually uploaded.
+
+# different approach with library taxize
+# species_ID2Superkingdom <- classification(tr_all_sp_virus.long$Species_ID_virushost, db = "ncbi", callopts=list(http_version = 0L)) # check local_config.R for setting up an API key.
+# # Curl trubleshooting (I got http2 error):
+# # 1. update curl: 
+# # install.packages("curl")
+# # 2. try this:
+# # httr::set_config(httr::config(http_version = 0))
+# NOTE: HTTP error 500 or curl error...
+# 
+# get_superkingdom <- function(species_id){
+#   return(classification(species_id, db = "ncbi")[[1]][2,1])
+# }
+# 
+# tr_all_sp_virus.long$Superkingdom_virushost[1:20] <- simplify2array(
+#   mclapply(tr_all_sp_virus.long$Species_ID_virushost[1:20], FUN = get_superkingdom,
+#     mc.cores = numcores))
+
+# Different approach with taxonomy file from NCBI Taxonomy database
+# manually downloaded NCBI taxonomy categories file:
+# read .dmp file which looks like tab separated
+taxid2superkingdom <- read.delim("/home/matteo/polybox/MSc_ACLS/swissrepeat/data/categories.dmp", header = FALSE, sep = "\t")
+colnames(taxid2superkingdom) <- c("superkingdom", "species_taxid", "taxid") # see readme file in data folder for detailed description
+taxid2superkingdom$superkingdom <- as.factor(taxid2superkingdom$superkingdom)
+
+tr_all_sp_virus.long$Superkingdom_virushost <- simplify2array(
+  mclapply(tr_all_sp_virus.long$Species_ID_virushost, FUN = function(x){
+    ifelse(x %in% taxid2superkingdom$taxid, as.character(taxid2superkingdom$superkingdom[which(taxid2superkingdom$taxid == x)]), NA)},
+    mc.cores = 7))
+
+# replace single letters with full names
+tr_all_sp_virus.long$Superkingdom_virushost[tr_all_sp_virus.long$Superkingdom_virushost == "E"] <- "Eukaryotic viruses"
+tr_all_sp_virus.long$Superkingdom_virushost[tr_all_sp_virus.long$Superkingdom_virushost == "B"] <- "Bacterial viruses"
+tr_all_sp_virus.long$Superkingdom_virushost[tr_all_sp_virus.long$Superkingdom_virushost == "A"] <- "archaeal viruses"
+
+# set levels to Species_virushost and Superkingdom_virushost
+tr_all_sp_virus.long$Species_ID_virushost <- factor(tr_all_sp_virus.long$Species_ID_virushost, levels = unique(tr_all_sp_virus.long$Species_ID_virushost))
+tr_all_sp_virus.long$Superkingdom_virushost <- factor(tr_all_sp_virus.long$Superkingdom_virushost, levels = unique(tr_all_sp_virus.long$Superkingdom_virushost))
+tr_all_sp_virus.long$TR_id <- factor(tr_all_sp_virus.long$TR_id, levels = unique(tr_all_sp_virus.long$TR_id))
+```
+
+## Summary statistics about the virushost superkingdom here:
+```{r summary statistics of virushost}
+# no. of different virushosts
+length(unique(tr_all_sp_virus.long$Species_ID_virushost))
+
+# # how often each virus host superkingdom appears in TR
+table(tr_all_sp_virus.long$Superkingdom_virushost)
+
+# % of superkingdom
+eukaryotic_virushost_fraction <- round(table(tr_all_sp_virus.long$Superkingdom_virushost)[[1]]/nrow(tr_all_sp_virus.long),3)
+eukaryotic_virushost_fraction
+bacterial_virushost_fraction <- round(table(tr_all_sp_virus.long$Superkingdom_virushost)[[2]]/nrow(tr_all_sp_virus.long),3)
+bacterial_virushost_fraction
+archaeal_virushost_fraction <- round(table(tr_all_sp_virus.long$Superkingdom_virushost)[[3]]/nrow(tr_all_sp_virus.long),3)
+archaeal_virushost_fraction
+
+str(tr_all_sp_virus.long)
+unique(tr_all_sp_virus.long$Superkingdom_virushost)
+```
+771 different virus host species were found in viral Proteins containing TRs (and are annotated in Swissprot).
+81.4% of viral TRs have a eukaryotic host organism but only 2.8% have a bacterial host organism and 0.9% have archaeal hosts.
+
+CONCERN: biased data: more intensively investigated species (model organisms and humans) appear more often.
+```{r}
+x <- data.frame(table(tr_all_sp_virus.long$Species_ID_virushost)) # get counts of each virus host species tax id's
+x <- x[order(x$Freq, decreasing = TRUE),] # list the species_id which appears the most at top
+x <- x[1:100,] # look only at a subsection. Not to overload NCBI servers with requests ;-)
+
+get_taxname <- function(species_id){
+  evo_tree <- classification(as.character(species_id), db = "ncbi", callopts=list(http_version = 0L))[[1]]
+  return(evo_tree[nrow(evo_tree),1])
+}
+
+x$taxname_virushost[1:20] <- simplify2array(
+  lapply(x$Var1[1:20], FUN = get_taxname)) # mclapply doesn't work (too many requests ^^)
+x
+```
+The initial concern doesn't seem to be true. As wild swines are no common model organisms neither is Acanthamoeba polyphaga.
+
+
+### Problematic:
+One protein can have several TRs.
+```{r}
+select(tr_all_sp, TR_id, ID)[10:15,]
+```
+
+one Protein can have several origins (Species_ID), hence appear in different Superkingdoms.
+```{r}
+select(tr_all_sp, TR_id, ID, Species_ID)
+```
+
+one viral Protein can have multiple hosts and
+one viral TR can appear in multiple hosts (TR_id 8961 appear in host 4072, 4097, ...)
+```{r}
+select(tr_all_sp_virus.long, TR_id, ID, Species_ID, Species_ID_virushost)[8:19,]
+```
+
+## Count TR by host Superkingdoms
+```{r TODO}
+## Initialize vectors for each host SK
+SK <- data.frame(Var1 = c("Eukaryotic_viruses", "Bacterial_viruses", "archaeal_viruses", "NAs"),
+                 Freq = c(0,0,0,0))
+
+## Determine for each viral TR it's host SK
+for ( i in tr_all_sp_virus.long$ID){
+  # SK <- table(tr_all_sp_virus.long$Superkingdom_virushost[1])
+  # SK <- SK + table(tr_all_sp_virus.long$Superkingdom_virushost[which(tr_all_sp_virus.long$TR_id == i)])
+  # print(table(tr_all_sp_virus.long$Superkingdom_virushost[which(tr_all_sp_virus.long$TR_id == i)]))
+  temp <- as.data.frame(table(tr_all_sp_virus.long$Superkingdom_virushost[which(tr_all_sp_virus.long$ID == i)]))
+  if (nrow(temp) == 0){
+    SK$Freq[which(SK$Var1 == "NAs")]  <- SK$Freq[which(SK$Var1 == "NAs")] + 1
+  } else {
+      for (j in 1:nrow(temp)){
+      # print(j)}}
+      if (temp[j,1] == "Eukaryotic viruses"){
+        SK$Freq[which(SK$Var1 == "Eukaryotic_viruses")]  <- SK$Freq[j] + temp$Freq[j]
+      } else if(temp[j,1] == "Bacterial viruses"){
+        SK$Freq[which(SK$Var1 == "Bacterial_viruses")]  <- SK$Freq[j] + temp$Freq[j]
+      } else if (temp[j,1] == "archaeal viruses"){
+        SK$Freq[which(SK$Var1 == "archaeal_viruses")]  <- SK$Freq[j] + temp$Freq[j]
+      }
+      }
+  }
+}
+
+SK
+```
+INTERPRETATION: 75357 viral TRs were detected in Eukaryotic hosts etc..
+TODO: Why so big numbers detected? sum(SK$Freq) = 218707
+  because for each protein, even if it has multiple TRs (many $ID), all Superkingdoms are summed up
+  
+  
+Different approach with sp_all (the dataset without the TRs, but all proteins)
+```{r TOOD}
+## split the TR with multiple virus-hosts to get single entries for each virus host
+sp_all.long <- sp_all %>%
+  mutate(virus_hosts = strsplit(as.character(virus_hosts), "; ")) %>%
+  unnest(virus_hosts)
+
+## add column with virus_host_superkingdom: found by Species ID 
+sp_all.long$Species_ID_virushost <- as.numeric(gsub("\\D", "", sp_all.long$virus_hosts)) # extract the TaxID from each virushost and add it as a seperate column
+
+# Different approach with taxonomy file from NCBI Taxonomy database
+# manually downloaded NCBI taxonomy categories file:
+# read .dmp file which looks like tab separated
+taxid2superkingdom <- read.delim("/home/matteo/polybox/MSc_ACLS/swissrepeat/data/categories.dmp", header = FALSE, sep = "\t")
+colnames(taxid2superkingdom) <- c("superkingdom", "species_taxid", "taxid") # see readme file in data folder for detailed description
+taxid2superkingdom$superkingdom <- as.factor(taxid2superkingdom$superkingdom)
+
+sp_all.long$Superkingdom_virushost <- simplify2array(
+  mclapply(sp_all.long$Species_ID_virushost, FUN = function(x){
+    ifelse(x %in% taxid2superkingdom$taxid, as.character(taxid2superkingdom$superkingdom[which(taxid2superkingdom$taxid == x)]), NA)},
+    mc.cores = 7))
+
+# replace single letters with full names
+sp_all.long$Superkingdom_virushost[sp_all.long$Superkingdom_virushost == "E"] <- "Eukaryotic viruses"
+sp_all.long$Superkingdom_virushost[sp_all.long$Superkingdom_virushost == "B"] <- "Bacterial viruses"
+sp_all.long$Superkingdom_virushost[sp_all.long$Superkingdom_virushost == "A"] <- "archaeal viruses"
+
+# set levels to Species_virushost and Superkingdom_virushost
+sp_all.long$Species_ID_virushost <- factor(sp_all.long$Species_ID_virushost, levels = unique(sp_all.long$Species_ID_virushost))
+sp_all.long$Superkingdom_virushost <- factor(sp_all.long$Superkingdom_virushost, levels = unique(sp_all.long$Superkingdom_virushost))
+
+## Initialize vectors for each host SK
+SK <- data.frame(Var1 = c("Eukaryotic_viruses", "Bacterial_viruses", "archaeal_viruses", "NAs"),
+                 Freq = c(0,0,0,0))
+
+# no. of virushosts per protein with Eukaryotic superkingdom
+table(table(sp_all.long$ID[which(sp_all.long$Superkingdom_virushost == "Eukaryotic viruses")]))
+# no. of virushosts per protein with Eukaryotic superkingdom and TR
+table(table(sp_all.long$ID[which(sp_all.long$Superkingdom_virushost == "Eukaryotic viruses" & sp_all.long$has_tr == TRUE)]))
+# no. of virushosts per protein with Eukaryotic superkingdom without TR
+table(table(sp_all.long$ID[which(sp_all.long$Superkingdom_virushost == "Eukaryotic viruses" & sp_all.long$has_tr == FALSE)]))
+```
+ 
+
+
+#TODO: do cake diagram analogous to julia msc thesis
+To get the correlation between the TR content of viral proteins and the TR content of their host organisms. 
+TODO: Find out if more important to get the length of the TRs (how many units they have) or the TR content per protein?
+
+all proteins (w/ and w/o) which have a viral host annotated:
+```{r}
+nrow(sp_all[which(sp_all$virus_hosts != ""),])
+```
+all protein which have TRs and an annotated host:
+```{r}
+nrow(tr_all_sp[which(tr_all_sp$virus_hosts != ""),])
+```
+
+
+```{r plot virus-virushost (Archaea)}
+# why not cake diagram: http://static1.squarespace.com/static/56713bf4dc5cb41142f28d1f/5671e8bf816924fc22651410/5671eb2e816924fc22651bc9/1450306350612/devourThePie3.gif?format=original
+
+#### Virushost information
+# virushost species which have proteins in swissprot
+virushostspecies <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                               Protein_ID = tr_all_sp_virus.long$ID,
+                               Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                               Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+# with >0 TRs
+df_archaea_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Archaea")]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+  ))
+# with 0 TRs
+df_archaea_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                      sp_all$ID %!in% tr_all_sp$ID & 
+                                                      sp_all$Superkingdom == "Archaea")]) # count all proteins coming from species which are virushost, have no TRs and are Achaea
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_archaea_virushost)<- c("nTR", "Freq")
+for (i in df_archaea_virushost$nTR){
+  if (i >4){
+    df_archaea_virushost$Freq[5] <- df_archaea_virushost$Freq[5] + df_archaea_virushost$Freq[which(df_archaea_virushost$nTR == i)] 
+  }
+}
+df_archaea_virushost <- df_archaea_virushost[1:5,]
+# calculate fraction of nTR
+df_archaea_virushost$fraction_nTR <- simplify2array(lapply(df_archaea_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_archaea_virushost$Freq), 3)}))
+df_archaea_virushost$Superkingdom <- rep("Archaeaic Virushost", nrow(df_archaea_virushost))
+
+#### Regular information
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_archaea <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Archaea")])
+  ))
+# with 0 TRs
+df_archaea[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$Superkingdom == "Archaea")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_archaea)<- c("nTR", "Freq")
+for (i in df_archaea$nTR){
+  if (i >4){
+    df_archaea$Freq[5] <- df_archaea$Freq[5] + df_archaea$Freq[which(df_archaea$nTR == i)] 
+  }
+}
+df_archaea <- df_archaea[1:5,]
+# calculate fraction of nTR
+df_archaea$fraction_nTR <- simplify2array(lapply(df_archaea$Freq, FUN = function(x){round(as.numeric(x)/sum(df_archaea$Freq), 3)}))
+df_archaea$Superkingdom <- rep("Archaea", nrow(df_archaea))
+
+#### Put toghether Regular info and Virushost info:
+df_archaea <- rbind(df_archaea, df_archaea_virushost)
+# # test dataframe:
+# df_archaea <- data.frame(Superkingdom = c(rep("Archaea", 5), rep("Archaeal Virus", 5)),
+#                          fraction_nTR = c(rep(c(0.71,0.23,0.04,0.01,0.001), 2)),
+#                          nTR = c(rep(as.character(seq(0,4,1)))))
+df_archaea
+str(df_archaea)
+
+
+#### Plots
+DOHISTOGRAM <- FALSE
+if (DOHISTOGRAM){
+  p <- ggplot(data=df_archaea, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Archaea")+
+    labs(x="", y="Fraction", fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_archaea_bar", figureFormat), width=12, height=8, dpi = 300)}
+} else { # piechart
+  p <- ggplot(data=df_archaea, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    coord_polar("y") + 
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    scale_fill_brewer(palette="Dark2")+
+    # ggtitle("Archaea")+
+    labs(fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.border = element_blank(),
+      panel.grid=element_blank(),
+      axis.ticks = element_blank(),
+      axis.text = element_blank(),
+      strip.text = element_text(size=14, face="bold")
+      # plot.title=element_text(size=14, face="bold")
+      )+
+    geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                     segment.size = .5, direction = 'x')
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_archaea_pie", figureFormat), width=12, height=8, dpi = 300)}
+}
+p
+```
+
+
+```{r plot virus-virushost (Bacteria)}
+#### Virushost information
+# virushost species which have proteins in swissprot
+virushostspecies <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                               Protein_ID = tr_all_sp_virus.long$ID,
+                               Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                               Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+# with >0 TRs
+df_bacteria_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Bacteria")]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+  ))
+# with 0 TRs
+df_bacteria_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                      sp_all$ID %!in% tr_all_sp$ID & 
+                                                      sp_all$Superkingdom == "Bacteria")]) # count all proteins coming from species which are virushost, have no TRs and are Achaea
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_bacteria_virushost)<- c("nTR", "Freq")
+for (i in df_bacteria_virushost$nTR){
+  if (i >4){
+    df_bacteria_virushost$Freq[5] <- df_bacteria_virushost$Freq[5] + df_bacteria_virushost$Freq[which(df_bacteria_virushost$nTR == i)] 
+  }
+}
+df_bacteria_virushost <- df_bacteria_virushost[1:5,]
+# calculate fraction of nTR
+df_bacteria_virushost$fraction_nTR <- simplify2array(lapply(df_bacteria_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_bacteria_virushost$Freq), 3)}))
+df_bacteria_virushost$Superkingdom <- rep("Bacterial Virushost", nrow(df_bacteria_virushost))
+
+#### Regular information
+## get all proteins with bacterial origin:
+# with >0 TRs
+df_bacteria <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Bacteria")])
+  ))
+# with 0 TRs
+df_bacteria[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$Superkingdom == "Bacteria")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_bacteria)<- c("nTR", "Freq")
+for (i in df_bacteria$nTR){
+  if (i >4){
+    df_bacteria$Freq[5] <- df_bacteria$Freq[5] + df_bacteria$Freq[which(df_bacteria$nTR == i)] 
+  }
+}
+df_bacteria <- df_bacteria[1:5,]
+# calculate fraction of nTR
+df_bacteria$fraction_nTR <- simplify2array(lapply(df_bacteria$Freq, FUN = function(x){round(as.numeric(x)/sum(df_bacteria$Freq), 3)}))
+df_bacteria$Superkingdom <- rep("Bacteria", nrow(df_bacteria))
+
+#### Put toghether Regular info and Virushost info:
+df_bacteria <- rbind(df_bacteria, df_bacteria_virushost)
+df_bacteria
+str(df_bacteria)
+
+
+#### Plots
+DOHISTOGRAM <- FALSE
+if (DOHISTOGRAM){
+  p <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Bacteria")+
+    labs(x="", y="Fraction", fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_bacteria_bar", figureFormat), width=12, height=8, dpi = 300)}
+} else { # piechart
+  p <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    coord_polar("y") + 
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    scale_fill_brewer(palette="Dark2")+
+    # ggtitle("Bacteria")+
+    labs(fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.border = element_blank(),
+      panel.grid=element_blank(),
+      axis.ticks = element_blank(),
+      axis.text = element_blank(),
+      strip.text = element_text(size=14, face="bold")
+      # plot.title=element_text(size=14, face="bold")
+      )+
+    geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                     segment.size = .5, direction = 'x')
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_bacteria_pie", figureFormat), width=12, height=8, dpi = 300)}
+}
+p
+```
+
+
+```{r plot virus-virushost (Eukaryota)}
+#### Virushost information
+# virushost species which have proteins in swissprot
+virushostspecies <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                               Protein_ID = tr_all_sp_virus.long$ID,
+                               Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                               Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+# with >0 TRs
+df_eukaryota_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Eukaryota")]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+  ))
+# with 0 TRs
+df_eukaryota_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                      sp_all$ID %!in% tr_all_sp$ID & 
+                                                      sp_all$Superkingdom == "Eukaryota")]) # count all proteins coming from species which are virushost, have no TRs and are Achaea
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota_virushost)<- c("nTR", "Freq")
+for (i in df_eukaryota_virushost$nTR){
+  if (i >4){
+    df_eukaryota_virushost$Freq[5] <- df_eukaryota_virushost$Freq[5] + df_eukaryota_virushost$Freq[which(df_eukaryota_virushost$nTR == i)] 
+  }
+}
+df_eukaryota_virushost <- df_eukaryota_virushost[1:5,]
+# calculate fraction of nTR
+df_eukaryota_virushost$fraction_nTR <- simplify2array(lapply(df_eukaryota_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota_virushost$Freq), 3)}))
+df_eukaryota_virushost$Superkingdom <- rep("Eukaryotic Virushost", nrow(df_eukaryota_virushost))
+
+#### Regular information
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_eukaryota <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Eukaryota")])
+  ))
+# with 0 TRs
+df_eukaryota[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$Superkingdom == "Eukaryota")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota)<- c("nTR", "Freq")
+for (i in df_eukaryota$nTR){
+  if (i >4){
+    df_eukaryota$Freq[5] <- df_eukaryota$Freq[5] + df_eukaryota$Freq[which(df_eukaryota$nTR == i)] 
+  }
+}
+df_eukaryota <- df_eukaryota[1:5,]
+# calculate fraction of nTR
+df_eukaryota$fraction_nTR <- simplify2array(lapply(df_eukaryota$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota$Freq), 3)}))
+df_eukaryota$Superkingdom <- rep("Eukaryota", nrow(df_eukaryota))
+
+#### Put toghether Regular info and Virushost info:
+df_eukaryota <- rbind(df_eukaryota, df_eukaryota_virushost)
+
+#### Add column for correct labelling
+df_eukaryota <- df_eukaryota %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR)- fraction_nTR/2)
+# # test dataframe:
+# df_eukaryota <- data.frame(Superkingdom = c(rep("Archaea", 5), rep("Archaeal Virus", 5)),
+#                          fraction_nTR = c(rep(c(0.71,0.23,0.04,0.01,0.001), 2)),
+#                          nTR = c(rep(as.character(seq(0,4,1)))))
+df_eukaryota
+str(df_eukaryota)
+
+
+#### Plots
+DOHISTOGRAM <- FALSE
+if (DOHISTOGRAM){
+  p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Eukaryota")+
+    labs(x="", y="Fraction", fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar", figureFormat), width=12, height=8, dpi = 300)}
+} else { # piechart
+  p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+    geom_bar(stat="identity", position = "fill")+
+    coord_polar("y") + 
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    scale_fill_brewer(palette="Dark2")+
+    # ggtitle("Eukaryota")+
+    labs(fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.border = element_blank(),
+      panel.grid=element_blank(),
+      axis.ticks = element_blank(),
+      axis.text = element_blank(),
+      strip.text = element_text(size=14, face="bold")
+      # plot.title=element_text(size=14, face="bold")
+      )+
+    geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                     segment.size = .5, direction = 'x')
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_pie", figureFormat), width=12, height=8, dpi = 300)}
+}
+p
+```
+
+
+same as above, but with the logic from extracting species level information (as i.e. for humans)
+TODO: why slightly different results?
+```{r plot virus-virushost (eukaryota): different approach}
+#### Virushost information
+# virushost species which have trs in swissprot
+virushostspecies_tr <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                               Protein_ID = tr_all_sp_virus.long$ID,
+                               Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                               Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+# with >0 TRs
+df_eukaryota_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$TR_id %in% virushostspecies_tr$TR_ID[which(virushostspecies_tr$Superkingdom_virushost == "Eukaryotic viruses")])]))) # make frequency table of all TRs coming from are virushosts and Archaea
+
+# with 0 TRs
+# virushost species which have proteins in swissprot
+virushostspecies_sp <- data.frame(Protein_ID = sp_all.long$ID,
+                               Species_ID_virushost = sp_all.long$Species_ID_virushost,
+                               Superkingdom_virushost = sp_all.long$Superkingdom_virushost)
+
+df_eukaryota_virushost[1,2] <- length(sp_all$ID[which(sp_all$ID %in% as.character(virushostspecies_sp$Protein_ID[which(virushostspecies_sp$Superkingdom_virushost == "Eukaryotic viruses")]) &
+                                                      sp_all$ID %!in% tr_all_sp$ID)]) # Take all viral proteins which are from a human host species. From those, select 
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota_virushost)<- c("nTR", "Freq")
+for (i in df_eukaryota_virushost$nTR){
+  if (i >4){
+    df_eukaryota_virushost$Freq[5] <- df_eukaryota_virushost$Freq[5] + df_eukaryota_virushost$Freq[which(df_eukaryota_virushost$nTR == i)] 
+  }
+}
+df_eukaryota_virushost <- df_eukaryota_virushost[1:5,]
+# calculate fraction of nTR
+df_eukaryota_virushost$fraction_nTR <- simplify2array(lapply(df_eukaryota_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota_virushost$Freq), 3)}))
+df_eukaryota_virushost$Superkingdom <- rep("Eukaryotic Virushost", nrow(df_eukaryota_virushost))
+
+#### Regular information
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_eukaryota <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Eukaryota")])
+  ))
+# with 0 TRs
+df_eukaryota[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & 
+                                          sp_all$Superkingdom == "Eukaryota")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota)<- c("nTR", "Freq")
+for (i in df_eukaryota$nTR){
+  if (i >4){
+    df_eukaryota$Freq[5] <- df_eukaryota$Freq[5] + df_eukaryota$Freq[which(df_eukaryota$nTR == i)] 
+  }
+}
+df_eukaryota <- df_eukaryota[1:5,]
+# calculate fraction of nTR
+df_eukaryota$fraction_nTR <- simplify2array(lapply(df_eukaryota$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota$Freq), 3)}))
+df_eukaryota$Superkingdom <- rep("Eukaryota", nrow(df_eukaryota))
+
+#### Put toghether Regular info and Virushost info:
+df_eukaryota <- rbind(df_eukaryota, df_eukaryota_virushost)
+
+#### Add column for correct labelling
+df_eukaryota <- df_eukaryota %>% 
+  group_by(Superkingdom) %>% 
+  # mutate(labpos = cumsum(fraction_nTR)- fraction_nTR/2)
+  # mutate(labpos = fraction_nTR *(2*pi)/2)
+  mutate(labpos = cumsum(fraction_nTR))
+# # test dataframe:
+# df_eukaryota <- data.frame(Superkingdom = c(rep("Archaea", 5), rep("Archaeal Virus", 5)),
+#                          fraction_nTR = c(rep(c(0.71,0.23,0.04,0.01,0.001), 2)),
+#                          nTR = c(rep(as.character(seq(0,4,1)))))
+df_eukaryota
+str(df_eukaryota)
+
+# annotation data-frame
+# ann_text <- data.frame(fraction_nTR = factor(as.character( c((df_eukaryota$fraction_nTR[1:5]), (df_eukaryota$fraction_nTR[6:10])))),
+#                        lab = as.character( c((df_eukaryota$fraction_nTR[1:5]), (df_eukaryota$fraction_nTR[6:10]))),
+#                        Superkingdom = df_eukaryota$Superkingdom)
+
+#### Plots
+DOHISTOGRAM <- FALSE
+if (DOHISTOGRAM){
+  p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=df_eukaryota$fraction_nTR, fill=df_eukaryota$nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Eukaryota")+
+    labs(x="", y="Fraction", fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p 
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota2_bar", figureFormat), width=12, height=8, dpi = 300)}
+} else { # piechart
+  p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+    geom_bar(stat="identity", position = "fill")+
+    coord_polar("y", start = 0, direction = -1) + 
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    scale_fill_brewer(palette="Dark2")+
+    # ggtitle("Eukaryota")+
+    labs(fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.border = element_blank(),
+      panel.grid=element_blank(),
+      axis.ticks = element_blank(),
+      axis.text = element_blank(),
+      strip.text = element_text(size=14, face="bold")
+      # plot.title=element_text(size=14, face="bold")
+      )+
+    # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')
+    geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+              color="white", size=3.5)
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota2_pie", figureFormat), width=12, height=8, dpi = 300)}
+}
+p
+
+
+
+p <- ggplot(data=df_eukaryota, aes(x=df_eukaryota$nTR, y=df_eukaryota$fraction_nTR, fill=df_eukaryota$nTR)) +
+    geom_bar(stat="identity")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Eukaryota2")+
+    # labs(y="Fraction", x= "TR count", fill = "TR count")+
+    labs(y="Fraction", x= "TR count", fill = "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        # axis.text.x.bottom = element_text(angle = 0),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p 
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota2_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+there are many missing Species_ID i.e. the one from homo sapiens. For the ones, where we have a Species name, we can fill it in with the data from ncbi dowloaded above.
+```{r TODO: NCBI seems to crash.... }
+# x <- sp_all[which(is.na(sp_all$Species_ID) & !is.na(sp_all$Species)), c(9,10)] # filter all proteins which have a missing species_id but do have a species name.
+# species2species_id <- data.frame(Species_ID = seq(1, length(unique(x$Species))),
+#                                  Species = seq(1, length(unique(x$Species))))
+# species2species_id$Species <- unique(x$Species) # take all unique species names
+# 
+# get_species_id <- function(species_name){
+#   evo_tree <- try(classification(as.character(species_name), db = "ncbi", callopts=list(http_version = 0L))[[1]])
+#   if (class(evo_tree) == "try-error") {
+#     return(NA)
+#   } else {
+#       return(evo_tree[nrow(evo_tree),ncol(evo_tree)])
+#   }
+# }
+# 
+# species2species_id$Species_ID[1:2] <- simplify2array(
+#   lapply(species2species_id$Species[1:2], FUN = get_species_id)) # mclapply doesn't work (too many requests ^^)
+# species2species_id
+
+```
+
+
+```{r plot virus-virushost (Homo Sapiens)}
+#### Virushost information
+# virushost species which have trs in swissprot
+virushostspecies_tr <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                               Protein_ID = tr_all_sp_virus.long$ID,
+                               Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                               Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+# with >0 TRs
+df_human_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$TR_id %in% virushostspecies_tr$TR_ID[which(virushostspecies_tr$Species_ID_virushost ==9606)])]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+  ))
+# with 0 TRs
+# virushost species which have proteins in swissprot
+virushostspecies_sp <- data.frame(Protein_ID = sp_all.long$ID,
+                               Species_ID_virushost = sp_all.long$Species_ID_virushost,
+                               Superkingdom_virushost = sp_all.long$Superkingdom_virushost)
+
+df_human_virushost[1,2] <- length(sp_all$ID[which(sp_all$ID %in% as.character(virushostspecies_sp$Protein_ID[which(virushostspecies_sp$Species_ID_virushost ==9606)]) &
+                                                      sp_all$ID %!in% tr_all_sp$ID)]) # Take all viral proteins which are from a human host species. From those, select 
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_human_virushost)<- c("nTR", "Freq")
+for (i in df_human_virushost$nTR){
+  if (i >4){
+    df_human_virushost$Freq[5] <- df_human_virushost$Freq[5] + df_human_virushost$Freq[which(df_human_virushost$nTR == i)] 
+  }
+}
+df_human_virushost <- df_human_virushost[1:5,]
+# calculate fraction of nTR
+df_human_virushost$fraction_nTR <- simplify2array(lapply(df_human_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_human_virushost$Freq), 3)}))
+df_human_virushost$Superkingdom <- rep("Human Virushost", nrow(df_human_virushost))
+
+#### Regular information
+
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_human <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species == "Homo sapiens (Human)")])
+  ))
+# with 0 TRs
+df_human[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & 
+                                          sp_all$Species == "Homo sapiens (Human)")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_human)<- c("nTR", "Freq")
+for (i in df_human$nTR){
+  if (i >4){
+    df_human$Freq[5] <- df_human$Freq[5] + df_human$Freq[which(df_human$nTR == i)] 
+  }
+}
+df_human <- df_human[1:5,]
+# calculate fraction of nTR
+df_human$fraction_nTR <- simplify2array(lapply(df_human$Freq, FUN = function(x){round(as.numeric(x)/sum(df_human$Freq), 3)}))
+df_human$Superkingdom <- rep("Human", nrow(df_human))
+
+#### Put toghether Regular info and Virushost info:
+df_human <- rbind(df_human, df_human_virushost)
+
+#### Add column for correct labelling
+df_human <- df_human %>% 
+  group_by(Superkingdom) %>% 
+  # mutate(labpos = cumsum(fraction_nTR)- fraction_nTR/2)
+  # mutate(labpos = fraction_nTR *(2*pi)/2)
+  mutate(labpos = cumsum(fraction_nTR))
+# # test dataframe:
+# df_human <- data.frame(Superkingdom = c(rep("Archaea", 5), rep("Archaeal Virus", 5)),
+#                          fraction_nTR = c(rep(c(0.71,0.23,0.04,0.01,0.001), 2)),
+#                          nTR = c(rep(as.character(seq(0,4,1)))))
+df_human
+str(df_human)
+
+# annotation data-frame
+# ann_text <- data.frame(fraction_nTR = factor(as.character( c((df_human$fraction_nTR[1:5]), (df_human$fraction_nTR[6:10])))),
+#                        lab = as.character( c((df_human$fraction_nTR[1:5]), (df_human$fraction_nTR[6:10]))),
+#                        Superkingdom = df_human$Superkingdom)
+
+#### Plots
+DOHISTOGRAM <- FALSE
+if (DOHISTOGRAM){
+  p <- ggplot(data=df_human, aes(x=factor(1), y=df_human$fraction_nTR, fill=df_human$nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Homo sapiens")+
+    labs(x="", y="Fraction", fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p 
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_bar", figureFormat), width=12, height=8, dpi = 300)}
+} else { # piechart
+  p <- ggplot(data=df_human, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+    geom_bar(stat="identity", position = "fill")+
+    coord_polar("y", start = 0, direction = -1) + 
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    scale_fill_brewer(palette="Dark2")+
+    # ggtitle("Homo sapiens")+
+    labs(fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.border = element_blank(),
+      panel.grid=element_blank(),
+      axis.ticks = element_blank(),
+      axis.text = element_blank(),
+      strip.text = element_text(size=14, face="bold")
+      # plot.title=element_text(size=14, face="bold")
+      )+
+    # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')
+    geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+              color="white", size=3.5)
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_pie", figureFormat), width=12, height=8, dpi = 300)}
+}
+p
+
+
+
+p <- ggplot(data=df_human, aes(x=df_human$nTR, y=df_human$fraction_nTR, fill=df_human$nTR)) +
+    geom_bar(stat="identity")+
+    facet_grid(~Superkingdom)+
+    # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Homo sapiens")+
+    # labs(y="Fraction", x= "TR count", fill = "TR count")+
+    labs(y="Fraction", x= "TR count", fill = "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        # axis.text.x.bottom = element_text(angle = 0),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p 
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+
+https://www.britannica.com/science/community-ecology/Community-equilibrium-and-species-diversity#ref588152
+```{r plot species-specieshost (plasmodium spp.)}
+#### Parasite information (plasmodium spp.)
+# with >0 TRs
+parasite_tr <- tr_all_sp[grepl(pattern = "Plasmodium", x = tr_all_sp$Species),]
+df_parasite <- as.data.frame(table(
+  table(parasite_tr$ID)
+))
+  
+# with 0 TRs
+parasite_sp <- sp_all[grepl(pattern = "Plasmodium", x = sp_all$Species),]
+df_parasite[1,2] <- length(parasite_sp$ID[which(parasite_sp$ID %!in% parasite_tr$ID)])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_parasite)<- c("nTR", "Freq")
+for (i in df_parasite$nTR){
+  if (i >4){
+    df_parasite$Freq[5] <- df_parasite$Freq[5] + df_parasite$Freq[which(df_parasite$nTR == i)] 
+  }
+}
+df_parasite <- df_parasite[1:5,]
+# calculate fraction of nTR
+df_parasite$fraction_nTR <- simplify2array(lapply(df_parasite$Freq, FUN = function(x){round(as.numeric(x)/sum(df_parasite$Freq), 3)}))
+df_parasite$organism <- rep("Plasmodium spp.", nrow(df_parasite))
+
+#### Intermediate host information (anopheles)
+# with >0 TRs
+intermediate_host_tr <- tr_all_sp[grepl(pattern = "Anopheles", x = tr_all_sp$Species),]
+df_intermediate_host <- as.data.frame(table(
+  table(intermediate_host_tr$ID)
+))
+  
+# with 0 TRs
+intermediate_host_sp <- sp_all[grepl(pattern = "Anopheles", x = sp_all$Species),]
+df_intermediate_host[1,2] <- length(intermediate_host_sp$ID[which(intermediate_host_sp$ID %!in% intermediate_host_tr$ID)])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_intermediate_host)<- c("nTR", "Freq")
+for (i in df_intermediate_host$nTR){
+  if (i >4){
+    df_intermediate_host$Freq[5] <- df_intermediate_host$Freq[5] + df_intermediate_host$Freq[which(df_intermediate_host$nTR == i)] 
+  }
+}
+df_intermediate_host <- df_intermediate_host[1:5,]
+# calculate fraction of nTR
+df_intermediate_host$fraction_nTR <- simplify2array(lapply(df_intermediate_host$Freq, FUN = function(x){round(as.numeric(x)/sum(df_intermediate_host$Freq), 3)}))
+df_intermediate_host$organism <- rep("Anopheles spp.", nrow(df_intermediate_host))
+
+### final host information (human)
+# with >0 TRs
+final_host_tr <- tr_all_sp[grepl(pattern = "Homo sapiens", x = tr_all_sp$Species),]
+df_final_host <- as.data.frame(table(
+  table(final_host_tr$ID)
+))
+  
+# with 0 TRs
+final_host_sp <- sp_all[grepl(pattern = "Homo sapiens", x = sp_all$Species),]
+df_final_host[1,2] <- length(final_host_sp$ID[which(final_host_sp$ID %!in% final_host_tr$ID)])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_final_host)<- c("nTR", "Freq")
+for (i in df_final_host$nTR){
+  if (i >4){
+    df_final_host$Freq[5] <- df_final_host$Freq[5] + df_final_host$Freq[which(df_final_host$nTR == i)] 
+  }
+}
+df_final_host <- df_final_host[1:5,]
+# calculate fraction of nTR
+df_final_host$fraction_nTR <- simplify2array(lapply(df_final_host$Freq, FUN = function(x){round(as.numeric(x)/sum(df_final_host$Freq), 3)}))
+df_final_host$organism <- rep("Homo sapiens (Human)", nrow(df_final_host))
+
+
+#### Put toghether Regular info and Virushost info:
+df_parasite <- rbind(df_parasite, df_intermediate_host, df_final_host)
+
+#### Add column for correct labelling
+df_parasite <- df_parasite %>% 
+  group_by(organism) %>% 
+  # mutate(labpos = cumsum(fraction_nTR)- fraction_nTR/2)
+  # mutate(labpos = fraction_nTR *(2*pi)/2)
+  mutate(labpos = cumsum(fraction_nTR))
+
+#### releveling for display in meaningful order:
+df_parasite$organism <- factor(df_parasite$organism, levels = c("Plasmodium spp.", "Anopheles spp.", "Homo sapiens (Human)"))
+
+
+df_parasite
+str(df_parasite)
+
+# annotation data-frame
+# ann_text <- data.frame(fraction_nTR = factor(as.character( c((df_parasite$fraction_nTR[1:5]), (df_parasite$fraction_nTR[6:10])))),
+#                        lab = as.character( c((df_parasite$fraction_nTR[1:5]), (df_parasite$fraction_nTR[6:10]))),
+#                        Superkingdom = df_parasite$Superkingdom)
+
+#### Plots
+DOHISTOGRAM <- FALSE
+if (DOHISTOGRAM){
+  p <- ggplot(data=df_parasite, aes(x=factor(1), y=df_parasite$fraction_nTR, fill=df_parasite$nTR)) +
+    geom_bar(stat="identity", position = "fill")+
+    facet_grid(~organism)+
+    # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Homo sapiens")+
+    labs(x="", y="Fraction", fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p 
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "parasite_parasitehosts_bar", figureFormat), width=12, height=8, dpi = 300)}
+} else { # piechart
+  p <- ggplot(data=df_parasite, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+    geom_bar(stat="identity", position = "fill")+
+    coord_polar("y", start = 0, direction = -1) + 
+    facet_grid(~organism)+
+    # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+    #           color="white", size=3.5)+
+    scale_fill_brewer(palette="Dark2")+
+    # ggtitle("Homo sapiens")+
+    labs(fill= "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+    theme(
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      panel.border = element_blank(),
+      panel.grid=element_blank(),
+      axis.ticks = element_blank(),
+      axis.text = element_blank(),
+      strip.text = element_text(size=12, face="bold")
+      # plot.title=element_text(size=14, face="bold")
+      )+
+    # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')
+    geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+              color="white", size=3.5)
+  p
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "parasite_parasitehosts_pie", figureFormat), width=12, height=8, dpi = 300)}
+}
+p
+
+p <- ggplot(data=df_parasite, aes(x=df_parasite$nTR, y=df_parasite$fraction_nTR, fill=df_parasite$nTR)) +
+    geom_bar(stat="identity")+
+    facet_grid(~organism)+
+    # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+    #           color="white", size=3.5)+
+    # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+    #                  segment.size = .5, direction = 'x')+
+    # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+    scale_fill_brewer(palette="Dark2")+
+    ggtitle("Parasite - Parasite-host")+
+    # labs(y="Fraction", x= "TR count", fill = "TR count")+
+    labs(y="Fraction", x= "TR count", fill = "TR count")+
+    theme_minimal()
+  p <- beautifier(p)+
+      theme(
+        axis.title.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.x.bottom = element_blank(),
+        # axis.text.x.bottom = element_text(angle = 0),
+        plot.title=element_text(size=14, face="bold")
+        )
+  p 
+  if (save == TRUE) {
+  ggsave(paste0(pathImages, "parasite_parasitehosts_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+-> look for parasite-host database
+
+
+
+
+
+
+
+
+
+
+
+# Presentation figures
+
+```{r}
+tr_all_sp %>%
+  ggplot(aes(x=n_effective, fill=Superkingdom)) +
+  xlim(c(0,40)) +
+  #scale_y_log10() +
+  geom_histogram(binwidth=1)
+```
+
+```{r}
+tr_all_sp %>%
+  ggplot(aes(x=n_effective, color=Superkingdom)) +
+  facet_wrap("Superkingdom", scales = "free") +
+  scale_x_continuous(lim=c(1,40)) +
+  scale_y_log10() +
+  #geom_density(adjust=4)# +
+  geom_histogram(binwidth=1,aes( fill=Superkingdom), alpha=.5, position="identity") +
+  labs(x="Repeat number")
+  
+```
+
+
+
+```{r}
+tr_all_sp %>%
+  ggplot(aes(x=l_effective, color=Superkingdom)) +
+  facet_wrap("Superkingdom", scales = "free") +
+  scale_x_continuous(lim=c(1,40)) +
+  scale_y_log10() +
+  #geom_density(adjust=4)# +
+  geom_histogram(binwidth=1,aes( fill=Superkingdom), alpha=.5, position="identity") +
+  labs(x="Repeat length")
+  
+```
+
+```{r}
+tr_all_sp %>% count(l_effective) %>% top_n(20)
+```
+

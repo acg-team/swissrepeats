@@ -1,0 +1,204 @@
+---
+title: 'TODO: Homorepeats in Swissprots'
+output:
+  html_document: default
+  pdf_document: default
+date: "March, 2019"
+---
+
+# Housekeeping
+```{r Housekeeping, echo=FALSE, message=FALSE, warning=FALSE}
+# Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
+setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
+source("local_config.R")
+setwd(paste0(local_base_path,"/results"))
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+
+# colour setup:
+#library(RColorBrewer); display.brewer.all() # to display available colour palettes
+colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
+getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
+```
+
+# Data Loading 
+```{r Data Loading , echo=FALSE, eval=TRUE}
+tr_path = paste0("results", local_path_separator, "tr_annotations", local_path_separator, "tr_annotations.csv")
+tr_all = load_tr_annotations(tr_path)
+
+sp_path = paste0("data", local_path_separator, "swissprot_annotations.tsv")
+sp_all = load_swissprot(sp_path, tr_all)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Add disorder information from modiDB
+discoor_path = paste0("results", local_path_separator, "disorder_annotations", local_path_separator, "mobidb_coordinates.csv")
+discoor_all = load_disorder_annotations(discoor_path)
+
+discoor_all$disorder_region_length =  (discoor_all$end - discoor_all$start) + 1
+discoor_all$center = floor(discoor_all$start + (discoor_all$disorder_region_length/2))
+discoor_all_sp = merge(x = discoor_all, y = sp_all, by = "ID", all.x = TRUE)
+
+# Remove eventual regions with incorrect coordinates
+discoor_all_sp = discoor_all_sp[(discoor_all_sp$center<discoor_all_sp$Length),]
+
+#Aggregate disordered regions by protein, calculate disorder residues count in a protein
+sp_protein= ddply(discoor_all, .(ID), summarize,
+                  disorder_count=(sum(disorder_region_length)))
+sp_protein = merge(x = sp_protein, y = sp_all, by = "ID", all.x = TRUE)
+
+
+aa_ignore = c("B", "X", "Z", "O", "U", "*","-",".","+", "other")
+homo_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/swissprot.csv"
+homo_all = load_homorepeat_data(homo_path, aa_ignore, "all")
+
+homo_disorder_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_consensus.csv"
+homo_d_all = load_homorepeat_data(homo_disorder_path, aa_ignore, "disorder")
+
+homo_order_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_consensus_inverse.csv"
+homo_o_all = load_homorepeat_data(homo_order_path, aa_ignore, "order")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/swissprot.csv"
+# homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/swissprot_kingdomwise.csv"
+# couldn't find the file "swissport_kingdomwise.csv" and don't know where it's generated... however swissprot exists in this directory and seems to work.
+homo_exp_all = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "all")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus.csv"
+homo_exp_d = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "disorder")
+
+homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus_inverse.csv"
+homo_exp_o = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore, "order")
+```
+# Homorepeats
+```{r}
+nrow(tr_all_sp) # no. of all TRs in swissprot
+nrow(homo_all) # no. of all homorepeats (CHECK! -> wrong! See here: length(unique(tr_all_sp$ID[which(tr_all_sp$has_homo_tr == TRUE) ])) )
+
+nrow(homo_all)/nrow(tr_all_sp)
+
+nrow(homo_all[which(homo_all$Kingdom == "Eukaryota"),])/nrow(tr_all_sp)
+
+nrow(homo_all[which(homo_all$Kingdom == "Eukaryota"),])/nrow(tr_all_sp[which(tr_all_sp$Superkingdom == "Eukaryota"),])
+
+nrow(homo_all[which(homo_all$Kingdom == "Eukaryota"),])/nrow(homo_all)
+
+str(sp_all)
+```
+
+
+### Fig. 5a
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=5}
+# for all AAs
+homo_q = subset(homo_all, type == "empirical")
+p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=aa)) +
+  geom_point(size=2)+
+  facet_wrap(~ Kingdom, scales = "fixed")+
+  ggtitle('Empirical data')+
+  labs(x = "Repeat unit number",
+       y = expression(log[10]~count~(rounded)))+
+  scale_color_manual(values = morecolors2)+
+  guides(colour=guide_legend(override.aes = list(size = 3)),
+         size=FALSE)
+p = beautifier(p, x.axis.text.angle = 0)
+p <- paper.figure(p, x.axis.text.angle = 0)
+p
+if( save) {
+  ggsave(paste0(pathImages, "fig5a_allAA", figureFormat), width=12, height=8, dpi = 300)
+}
+
+
+
+# For a subset of AAs
+homo_q = subset(homo_all, aa %in% c("N", "Q", "S", "E") & type == "empirical")
+
+p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=aa)) +
+  geom_point(size=2)+
+  facet_wrap(~ Kingdom, scales = "fixed")+
+  ggtitle('Empirical data')+
+  labs(x = "Repeat unit number",
+       y = expression(log[10]~count~(rounded)))+
+  scale_color_manual(values = cols1,
+                     name = "AA")+
+  guides(colour=guide_legend(override.aes = list(size = 3)),
+         size=FALSE)
+p = beautifier(p, x.axis.text.angle = 0)
+p <- paper.figure(p, x.axis.text.angle = 0)
+p
+if( save) {
+  ggsave(paste0(pathImages, "fig5a", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+Fig. 5a). Count of homorepeats in Swiss-Prot in four Superkingdoms for different repeat unit number ($n <= 50$, equivalent to repeat length) for hydrophilic Asparagine (N), Glutamine (Q), Serine (S) and Glutamic acid (E). Homorepeats with large $n$ seem to mostly pertain to the Eukaryotes. 
+
+### Fig. 5b
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=6}
+# Plot empirical vs expected counts
+show_homorepeat_counts <- function(data, kingdom, nmin, nmax, cols1){
+  homo_sub = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax)
+  p = ggplot(homo_sub, aes(x=n, y=log10_count_rounded, colour=type)) + 
+    geom_point(size=1.5)+
+    facet_wrap(~ aa)+
+    labs(x = "Repeat unit number",
+         y = expression(log[10]~count~(rounded)))+
+    guides(colour=guide_legend(override.aes = list(size = 3)), 
+           size=FALSE)+
+    theme(panel.spacing.x=unit(1.5, "lines"),panel.spacing.y=unit(1, "lines"))+
+    scale_color_manual(values = c(cols1[1], cols1[4])) # c("#D46A6A", "#D49A6A", "#407F7F", "#55AA55")
+  beautifier(p, x.axis.text.angle = 0)
+  paper.figure(p, x.axis.text.size = 18, x.axis.text.angle = 45, x.axis.text.hjust = 1)
+}
+
+p = show_homorepeat_counts(homo_all, "Eukaryota", 1, 50, cols1)
+p
+if( save) {
+  ggsave(paste0(pathImages, "fig5b", figureFormat), width=12, height=8, dpi = 300)
+}
+
+```
+Fig. 5b). Empirical and expected count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$). Amino acids are ordered by their propensity to promote structural order.
+
+
+### Fig. 5c
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=6}
+# Plot empirical counts for order vs disorder.
+n_chars_swiss_prot = sum(homo_all[homo_all$type=="empirical","repeat_region_length"])
+homo_all$set = "all"
+homo_d_all$set = "disorder"
+homo_o_all$set= "order"
+homo_all$count_relative_sequence_length = homo_all$count
+homo_d_all$count_relative_sequence_length = homo_d_all$count/sum(homo_d_all[homo_d_all$type=="empirical","repeat_region_length"]) * n_chars_swiss_prot
+homo_o_all$count_relative_sequence_length = homo_o_all$count/sum(homo_o_all[homo_o_all$type=="empirical","repeat_region_length"]) * n_chars_swiss_prot
+
+homo = rbind(homo_all, homo_d_all, homo_o_all)
+homo$set = as.factor(homo$set)
+homo$log10_count_relative_sequence_length = log10(homo$count_relative_sequence_length)
+
+show_empirical_homorepeat_counts_relative_to_total_seq_length <- function(data, kingdom, nmin, nmax, cols1){
+  homo_empirical = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax & set != "all" & type == "empirical")
+  p = ggplot(homo_empirical, aes(x=n, y=log10_count_relative_sequence_length, colour=set)) + 
+    geom_point(size=1.5) +
+    facet_wrap(~ aa)+
+    # scale_y_continuous(limits = c(0, 10))+
+    scale_x_continuous(breaks = (seq(nmin, nmax, by = round((nmax/max(nmin,1))/5))))+
+    geom_hline(yintercept=0)+
+    labs(x = "Repeat unit number",
+         y = expression(log[10]~count~(rounded)))+
+    guides(colour=guide_legend(override.aes = list(size = 3)), 
+           size=FALSE)+
+    theme(panel.spacing.x=unit(1.5, "lines"),panel.spacing.y=unit(1, "lines"))+
+    scale_color_manual(values = c(cols1[1], cols1[4])) # c("#D46A6A", "#D49A6A", "#407F7F", "#55AA55")
+  beautifier(p, x.axis.text.angle = 0)
+  paper.figure(p, x.axis.text.size = 18, x.axis.text.angle = 45, x.axis.text.hjust = 1)
+}
+
+p = show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Eukaryota", 0, 50, cols1)
+if( save) {
+  ggsave(paste0(pathImages, "fig5c", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5c). Empirical count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$) for ordered and disordered regions (consensus MobiDB annotations, no minimum length cut-off.). Amino acids are ordered by their propensity to promote structural order.
+

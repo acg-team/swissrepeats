@@ -1,0 +1,597 @@
+---
+title: 'FIGURES: A new census of protein tandem repeats: fun with disorder.'
+output:
+  html_document: default
+  pdf_document: default
+date: "January 14, 2016"
+---
+
+
+```{r, echo=FALSE}
+# Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
+source("local_config.R")
+setwd(paste0(local_base_path,"/results"))
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+
+# colour setup:
+#library(RColorBrewer); display.brewer.all() # to display available colour palettes
+colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
+getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+```
+
+
+```{r, echo=FALSE, eval=TRUE}
+tr_path = "results/tr_annotations/tr_annotations.csv"
+tr_all = load_tr_annotations(tr_path)
+
+sp_path = "data/swissprot_annotations.tsv"
+sp_all = load_swissprot(sp_path, tr_all)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+
+discoor_path = "results/disorder_annotations/mobidb_coordinates.csv"
+discoor_all = load_disorder_annotations(discoor_path)
+
+discoor_all$disorder_region_length =  (discoor_all$end - discoor_all$start) + 1
+discoor_all$center = floor(discoor_all$start + (discoor_all$disorder_region_length/2))
+discoor_all_sp = merge(x = discoor_all, y = sp_all, by = "ID", all.x = TRUE)
+#Remove eventual regions with incorrect coordinates
+discoor_all_sp = discoor_all_sp[(discoor_all_sp$center<discoor_all_sp$Length),]
+
+#Aggregate disordered regions by protein, calculate disorder residues count in a protein
+sp_protein= ddply(discoor_all, .(ID), summarize,
+  disorder_count=(sum(disorder_region_length)))
+sp_protein = merge(x = sp_protein, y = sp_all, by = "ID", all.x = TRUE)
+
+
+aa_ignore = c("B", "X", "Z", "O", "U")
+homo_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/swissprot.csv"
+homo_all = load_homorepeat_data(homo_path, aa_ignore, "all")
+
+homo_disorder_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_consensus.csv"
+homo_d_all = load_homorepeat_data(homo_disorder_path, aa_ignore, "disorder")
+
+homo_order_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/empirical_and_expected/mobidb_consensus_inverse.csv"
+homo_o_all = load_homorepeat_data(homo_order_path, aa_ignore, "order")
+
+#homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/swissprot_kingdomwise.csv"
+#homo_exp_all = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore)
+
+#homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus.csv"
+#homo_exp_d = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore)
+
+#homo_exp_path = "results/empirical_and_expected_homorepeat_counts/swiss_prot_homorepeat_frequencies/expected_on_unbound_sequence/mobidb_consensus_inverse.csv"
+#homo_exp_o = load_expected_homorepeat_frequencies(homo_exp_path, aa_ignore)
+```
+
+
+## Fig. 1a (cnf. Fig 5, Marcotte et al.)
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE, fig.width=15, fig.height=10}
+d = subset(tr_all,  pvalue <= 0.01 & l_effective <= 80 & n_effective <= 40)
+
+
+refactor = function(col) {
+  factor(col, levels = min(col):max(col))
+}
+d_summary = d %>%
+  mutate(n_effective_rounded = round(n_effective)) %>%
+  group_by(l_effective, n_effective_rounded) %>%
+  summarize(count=n()) %>%
+  ungroup() %>%
+  transmute(l_effective = refactor(l_effective),
+         n_effective_rounded = refactor(n_effective_rounded),
+         log10count=log10(count))
+p = ggplot(d_summary, aes(x=l_effective, y=n_effective_rounded, fill=log10count)) +
+  geom_raster() + scale_fill_gradientn(colors=parula(256), guide = "colourbar") 
+
+p = beautifier(p)
+# p = p + theme(text = element_text(family = "sans", size=48),
+#               strip.text = element_text(size=30, angle = 0),
+#               axis.text = element_text(size=25, margin=margin(10,1,2,1,"pt")),
+#               #panel.background = element_rect(fill="black"),
+#               panel.grid.major = element_blank(),
+#               panel.grid.minor = element_blank(),
+#               legend.key.size = unit(48, "pt"))
+p = p + labs(x="Repeat length", #expression(l[effective]),
+             y="Number of repeats", #expression(n[effective]),
+             fill=expression(log[10](count))) +
+  scale_x_discrete(breaks=c(1,seq(0,80,5),80)) +
+  scale_y_discrete(breaks=c(2,seq(0,40,5),40))
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "fig1", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 1a: Distribution (Heatmap) of tandem repeats (TRs) in Swiss-Prot as a function their repeat unit length $l_{effective} <= 80$ (x-Axis, x1) and their number of repeat units $n_{effective} <= 40$ (x2, y-Axis). Darker colour indicates a larger number of TRs. The majority of TRs has short TR units. Yet, there is a blob of domain TRs (25 < l_{effective} < 50), with certain TR unit length clearly enriched (e.g., $l_{effective} = 28$, mostly Zn finger TRs.)
+
+### TRs are abundant in proteins of all domains of life
+Percentage of TRs in all swissprot proteins by superkingdom
+>TODO: doesn't match with the numbers in the manuscript:
+
+```{r}
+TR_fractions = ddply(sp_all, .(Superkingdom), 
+                     summarize,
+                     has_tr_fraction=round(sum(has_tr==TRUE)/length(ID), digits = 3), 
+                     has_micro_tr_fraction=round(sum(has_micro_tr==TRUE)/length(ID), digits = 3), 
+                     has_short_tr_fraction=round(sum(has_short_tr==TRUE)/length(ID), digits = 3), 
+                     has_domain_tr_fraction=round(sum(has_domain_tr==TRUE)/length(ID), digits = 3), 
+                     mean_sequence_length=mean(Length), 
+                     count=length(ID))
+print(TR_fractions)
+```
+
+manuscript says:
+"Overall, 59.3% of all UniProtKB/Swiss-Prot eukaryotic proteins contained
+at least one TR. Interestingly, 52.4% of viral proteins
+contained TRs, almost as frequently as in eukaryotes.
+In comparison, fewer prokaryotic proteins contained TR,
+but nevertheless > 40% for both bacterial and archaeic
+proteins."
+
+should be corrected to:
+"Overall, 50.9% of all UniProtKB/Swiss-Prot eukaryotic proteins contained
+at least one TR. Interestingly, 43.6% of viral proteins
+contained TRs, almost as frequently as in eukaryotes.
+In comparison, fewer prokaryotic proteins contained TR,
+but nevertheless > 30% for both bacterial and archaeic
+proteins."
+
+### Fig 2a (cnf. Fig 1a, Marcotte et al.)
+```{r, echo=FALSE, eval=TRUE}
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+sp = ddply(sp_all, .(origin, Superkingdom, Kingdom, is_chloroplastic, is_mitochondrial), 
+           summarize, 
+           has_tr_fraction=sum(has_tr==TRUE)/length(ID), 
+           has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), 
+           has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), 
+           has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), 
+           mean_sequence_length=mean(Length), 
+           count=length(ID))
+```
+```{r, echo=FALSE, fig.width=8, fig.height=8/3}
+sp_gathered <- sp %>%
+  gather("RepeatType","Fraction", has_tr_fraction, has_micro_tr_fraction, has_short_tr_fraction, has_domain_tr_fraction) %>%
+  mutate(RepeatType = recode_factor(RepeatType, has_tr_fraction="All", has_micro_tr_fraction="Micro", has_short_tr_fraction="Short", has_domain_tr_fraction="Domain")) %>%
+  #filter(RepeatType != "All") %>%
+  mutate(Source=as.factor(if_else(is_chloroplastic, "Chloroplast", if_else(is_mitochondrial,"Mitochondria", "Organism")))) %>%
+  mutate(Kingdom = factor(if_else(Superkingdom != "Eukaryota", Superkingdom,
+                          if_else(Kingdom != "", Kingdom, "Other Eukaryota")),
+                          levels = c("Metazoa","Viridiplantae","Fungi", "Other Eukaryota", "Bacteria", "Archaea","Viruses"))) %>%
+  filter(RepeatType != "All")
+
+sp_gathered.means = sp_gathered %>%
+  group_by(RepeatType) %>%
+  summarize(slope = mean(Fraction)/mean(mean_sequence_length)) %>%
+  ungroup() %>%
+  mutate(intercept=0) %>%
+  as.data.frame()
+
+
+p = sp_gathered %>% ggplot(aes(x=mean_sequence_length, y=Fraction, facet=RepeatType, shape=Source, color=Kingdom)) +
+  facet_wrap(facets="RepeatType") +
+  geom_abline(data = sp_gathered.means, aes(intercept=0, slope=slope)) +
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7))
+  #ggtitle(' tandem repeats')
+p = beautifier(p)
+
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_combined", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_micro_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + 
+  geom_point()
+p = p + geom_abline(intercept=0, slope=mean(sp$has_micro_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of micro TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Micro tandem repeats')
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_micro", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_short_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) +
+  geom_point()
+p = p + geom_abline(intercept=0, slope=mean(sp$has_short_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of small TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Small tandem repeats')
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_short", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+```{r, echo=FALSE, fig.width=8, fig.height=7}
+p = ggplot(sp, aes(x=mean_sequence_length, y=has_domain_tr_fraction, colour=origin, shape=Superkingdom, size=log10(count))) + 
+  geom_point()
+p = p + geom_abline(intercept=0, slope=mean(sp$has_domain_tr_fraction)/mean(sp$mean_sequence_length), colour="grey")+
+  theme(         text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans",angle = 0),
+                 strip.text.y = element_text(family = "sans",angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans",angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans",margin=margin(1,1,2,1,"pt")),
+                 axis.ticks.length = unit(0.05, "cm")) +
+  geom_point(size=2) +  
+  labs(x="Mean Protein Length", 
+       y="Fraction of domain TR")+
+  coord_cartesian(ylim = c(min(sp_gathered$Fraction),max(sp_gathered$Fraction)))+
+  scale_fill_manual(values=getPalette(colour_count)) +
+  scale_size_continuous(range=c(2,7)) +
+  ggtitle('Domain tandem repeats')
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig2a_domain", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 2a) Shown is the fraction of proteins with TRs as a function of sequence length. 
+
+### Fig2a-2 (cnf. Fig 1b Marcotte et al.)
+## Tandem Repeats All
+Show how sequence length and presence of TRs correlate.
+```{r, echo=TRUE}
+sequence_length_bin <- with(sp_all, cut(Length, breaks = c(0, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1250, 1500, 2000, 50000), dig.lab=12))
+sp <- ddply(sp_all, .(Superkingdom, sequence_length_bin), summarise, has_tr_fraction=sum(has_tr==TRUE)/length(ID), has_micro_tr_fraction=sum(has_micro_tr==TRUE)/length(ID), has_short_tr_fraction=sum(has_short_tr==TRUE)/length(ID), has_domain_tr_fraction=sum(has_domain_tr==TRUE)/length(ID), n_proteins=length(ID))
+sp$has_tr_fraction_binary_proportion_confidence_interval = sqrt(sp$has_tr_fraction*(1-sp$has_tr_fraction)/sp$n_proteins)
+
+
+# Need to summarize data for blocks of "Length".
+# For the error bars, see https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + 
+  geom_errorbar(aes(ymin=has_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2) +
+  scale_colour_brewer(type=2, palette="RdYlBu")+
+  ggtitle('Tandem repeat appearance by protein sequence length and Superkingdom')+
+  theme(
+                 text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans", angle = 0),
+                 strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))
+                 ) +
+  labs(x="Sequence length", 
+       y="Fraction of TR")
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-2", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+## Micro Tandem Repeats -> Supplementary (incl. small and domain?)
+```{r, echo=FALSE}
+
+p = ggplot(sp, aes(x=sequence_length_bin, y=has_micro_tr_fraction, colour=Superkingdom)) + geom_point()
+p = p + 
+  geom_errorbar(aes(ymin=has_micro_tr_fraction-has_tr_fraction_binary_proportion_confidence_interval,
+                    ymax=has_micro_tr_fraction+has_tr_fraction_binary_proportion_confidence_interval), width=.2)+
+  scale_colour_brewer(type=2, palette="RdYlBu") +
+  ggtitle('Micro tandem repeats') + # TODO: Add wrapped plots for other species
+  theme(
+                 text = element_text(),
+                 legend.text = element_text(family = "sans", face='italic', hjust=0),
+                 strip.text.x = element_text(family = "sans", angle = 0),
+                 strip.text.y = element_text(family = "sans", angle = 270, margin = margin(r=30)),
+                 axis.text.x = element_text(family = "sans", angle = 90, margin=margin(1,1,2,1,"pt")),
+                 axis.text.y = element_text(family = "sans", margin=margin(1,1,2,1,"pt"))
+                 ) +
+  labs(x="Sequence length",
+       y="Fraction with micro TR")
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig2a-3", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 2a-2) Shown is the fraction of TRs in the Superkingdoms as a function of protein sequence bins.
+
+
+### Fig 2b
+```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=7}
+protein_length_bin <-cut(sp_protein$Length, breaks = c(0, 50, 100, 300, 500, 1000, 1500, 2000, 3000, max(sp_protein$Length)), dig.lab=12)
+
+sp_protein$length_group = protein_length_bin
+sp_protein_bylength = ddply(sp_protein, .(length_group, origin, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, shape=Superkingdom, colour=origin, size=log(count)/10)) +
+  geom_point(alpha=0.5, show.legend=TRUE) + 
+  ylim(0,1.0) + 
+  geom_line(aes(group=origin), size=0.3)+
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size = 2)) + # size = 8
+  labs(y="Mean disorder content",
+       x="Protein Length")
+if( save) {
+    ggsave(paste0(pathImages, "fig2b", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+```{r, echo=FALSE, warning=FALSE, fig.width=10, fig.height=7}
+sp_protein_bylength = ddply(sp_protein, .(length_group, Superkingdom), summarize, mean_dis_content=mean(disorder_count/Length), count=length(ID))
+
+p = ggplot(sp_protein_bylength, aes(x=length_group, y=mean_dis_content, colour=Superkingdom, size=log10(count))) + 
+  geom_point(alpha=0.5, show.legend=TRUE) + 
+  ylim(0,1.0) + 
+  geom_line(aes(group=Superkingdom), size=0.3)
+p = p + theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1),
+        text = element_text(size=8)) +
+  labs(y="Mean disorder content",
+       x="Protein Length")
+if( save) {
+    ggsave(paste0(pathImages, "fig2b_simple", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+
+### Fig. 3a
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE, fig.width=10, fig.height=9}
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0,3, 15, 2000), dig.lab = 12))
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin, fill=repeat_type_bin)) +
+    geom_density(alpha=.5) + facet_wrap(~ Superkingdom, scales = "free")
+p = beautifier(p) +
+  # theme(strip.text = element_text(size=10),
+  #       legend.text = element_text(size=20),
+  #       legend.title = element_text(size=30),
+  #       axis.text = element_text(size=15)) +
+  theme(strip.text = element_text(),
+        legend.text = element_text(),
+        legend.title = element_text(),
+        axis.text = element_text()) +
+  labs(x="TR center location (center/Length)",
+       y="Density",
+       fill=expression(l[effective])) +
+  guides(color=F) # disable color axis
+
+if( save) {
+    ggsave(paste0(pathImages, "fig3a", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 3a) Shown are density plots for the relative positions of tandem repeats (TRs) within the protein for four Superkindoms. Colours indicate repeat unit lengths. Interestingly, short TRs are biased towards the flanks of the protein. In particular for Eukaryotes, there is a clear correlation between TR unit length and location bias to the protein flanks. For Eukaryotes, tandem repeats are particularly prevalent in the N-terminal protein flank. Homorepeats in Archaea and, to a lesser degree, Bacteria show a strong bias to the C-terminal protein flank. 
+
+
+### all 
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+tr_all_sp$repeat_type_bin <- with(tr_all_sp, cut(l_effective, breaks = c(0,3, 15, 2000), dig.lab = 12))
+p = ggplot(tr_all_sp, aes(x = center/Length, colour=repeat_type_bin, fill=repeat_type_bin)) +
+    geom_density(size=1, alpha=.5) +
+  scale_color_manual( values = c("grey","violet","turquoise4"), name  ="TR type", breaks=c("(0,3]","(3,15]", "(15,2000]"),labels=c("Micro", "Small","Domain")) +
+  scale_fill_manual( values = c("grey","violet","turquoise4"), name  ="TR type", breaks=c("(0,3]","(3,15]", "(15,2000]"),labels=c("Micro", "Small","Domain")) +
+labs(x="TR center location (center/Length)", y="Density") 
+p = p + theme_minimal(base_size = 10)
+if( save) {
+    ggsave(paste0(pathImages, "fig3a_all", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+The center-bias for domain TRs comes from boundary effects from the simple center/Length metric employed; if the TR covers a significant fraction of the protein, then it's center necessarily falls near the middle. We can compensate for this by normalizing over only the valid center locations:
+
+$$
+x = \frac{center - l_{eff}*n_{eff}/2}{N-l_{eff}*n_{eff}}
+$$
+
+
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+# renormalized version accounting for true length
+tr_all_sp_positions <- tr_all_sp %>%
+  transmute(repeat_type_bin,center=round(center), Length=round(Length), total_repeat_length=round(total_repeat_length)) %>%
+  mutate(usableLen = Length - total_repeat_length,
+         pos = (center-ceiling(total_repeat_length/2))/usableLen) %>%
+  filter(usableLen > 0) %>% #otherwise causes NaN or Inf
+  tbl_df
+
+# possible bug: some centers lie outside the usable length
+tr_all_sp_positions %>% 
+  mutate(diff= center - floor(Length+1/2 - total_repeat_length/2)) %>%
+  arrange(-pos) %>% 
+  top_n(1,diff) %>%
+  invisible
+
+p = ggplot(tr_all_sp_positions %>% filter(pos <= 1), aes(x = pos, colour=repeat_type_bin, fill=repeat_type_bin)) +
+  geom_density(size=1, alpha=.5) +
+  scale_color_manual( values = c("grey","violet","turquoise4"), name  ="TR type", breaks=c("(0,3]","(3,15]", "(15,2000]"),labels=c("Micro", "Small","Domain")) +
+  scale_fill_manual( values = c("grey","violet","turquoise4"), name  ="TR type", breaks=c("(0,3]","(3,15]", "(15,2000]"),labels=c("Micro", "Small","Domain")) +
+labs(x="TR center location", y="Density") 
+p = p + theme_minimal(base_size = 10)
+if( save) {
+    ggsave(paste0(pathImages, "fig3a_all_renormalized", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+
+
+
+### Fig. 3b 
+```{r, warning=FALSE, eval=TRUE, echo=FALSE, message=FALSE}
+disorder_length_bin <-with(discoor_all_sp , cut(disorder_region_length, breaks = c(0, 30, max(discoor_all_sp$disorder_region_length)), dig.lab = 12))
+p = ggplot(discoor_all_sp, aes(x = center/Length, colour=disorder_length_bin, fill=disorder_length_bin)) +
+    geom_density(alpha=.5) + facet_wrap(~ Superkingdom, scales = "free")
+#p = beautifier(p)
+p = p +
+  labs(x="Disorder center location (center/Length)",
+       colour="Disorder length",
+       fill="Disorder length")
+if( save) {
+    ggsave(paste0(pathImages, "fig3b", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 3b) Density plots of position of disorder regions within the protein for four Superkingdoms. Both short and long disorder regions tend to cluster towards the flank of the protein, to the N-terminal specifically, with the trend being somewhat weaker in Eukaryotes.
+
+### Fig. 4a
+```{r, warning=FALSE, echo=FALSE, eval=TRUE, fig.width=10, fig.height=5}
+p = ggplot(tr_all_sp, aes(x=fraction_disordered_chars, colour=Superkingdom, fill=Superkingdom)) +
+  geom_density(alpha=.5) # + geom_histogram(aes(y=..density..),position="dodge",alpha=.5, bins=10)
+p = p + facet_wrap(~ factor(l_type, levels=c("micro","small","domain")), scales = "free") +
+  labs(x="Fraction of disordered AA in TRs")
+
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig4a", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+
+```
+Fig. 4a) Shown is the fraction of disorderd residues for micro TRs, small TRs and domain TRs. We see clearly bimodal distributions, with the majority TRs mostly ordered, however with a striking fraction of small TRs and micro TRs mostly disordered.
+
+### Fig. 5a
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=5}
+homo_q = subset(homo_all, aa %in% c("N", "Q", "S", "E") & type == "empirical")
+p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=aa)) + geom_point()
+p = p + facet_wrap(~ Kingdom, scales = "free")
+p = p + ggtitle('Empirical data')
+p = beautifier(p)
+if( save) {
+    ggsave(paste0(pathImages, "fig5a", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5a). Count of homorepeats in Swiss-Prot in four Superkingdoms for different repeat unit number ($n <= 50$, equivalent to repeat length) for amino acids E, S, N and Q. Homorepeats with large $n$ seem to mostly pertain to the Eukaryotes. 
+
+### Fig. 5b
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=6}
+# Plot empirical vs expected counts
+show_homorepeat_counts <- function(data, kingdom, nmin, nmax){
+  homo_sub = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax)
+  p = ggplot(homo_sub, aes(x=n, y=log10_count_rounded, colour=type)) + geom_point(size=1.5)
+  p = p + facet_wrap(~ aa)
+  beautifier(p)
+}
+
+p = show_homorepeat_counts(homo_all, "Eukaryota", 1, 50)
+if( save) {
+    ggsave(paste0(pathImages, "fig5b", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5b). Empirical and expected count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$). Amino acids are ordered by their propensity to promote structural order.
+
+
+### Fig. 5c
+```{r, echo=FALSE, eval=TRUE, fig.width=10, fig.height=6}
+# Plot empirical counts for order vs disorder.
+n_chars_swiss_prot = sum(homo_all[homo_all$type=="empirical","repeat_region_length"])
+homo_all$set = "all"
+homo_d_all$set = "disorder"
+homo_o_all$set= "order"
+homo_all$count_relative_sequence_length = homo_all$count
+homo_d_all$count_relative_sequence_length = homo_d_all$count/sum(homo_d_all[homo_d_all$type=="empirical","repeat_region_length"]) * n_chars_swiss_prot
+homo_o_all$count_relative_sequence_length = homo_o_all$count/sum(homo_o_all[homo_o_all$type=="empirical","repeat_region_length"]) * n_chars_swiss_prot
+
+homo = rbind(homo_all, homo_d_all, homo_o_all)
+homo$set = as.factor(homo$set)
+homo$log10_count_relative_sequence_length = log10(homo$count_relative_sequence_length)
+
+show_empirical_homorepeat_counts_relative_to_total_seq_length <- function(data, kingdom, nmin, nmax){
+  homo_empirical = subset(data, Kingdom==kingdom & n >= nmin & n <= nmax & set != "all" & type == "empirical")
+  p = ggplot(homo_empirical, aes(x=n, y=log10_count_relative_sequence_length, colour=set)) + geom_point(size=1.5)
+  p = p + facet_wrap(~ aa)
+  #p = p + scale_y_continuous(limits = c(0, 10))
+  p = p + scale_x_continuous(breaks = (seq(nmin, nmax, by = round((nmax/max(nmin,1))/5))))
+  p = p + geom_hline(yintercept=0)
+  beautifier(p)
+}
+
+p = show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Eukaryota", 0, 50)
+if( save) {
+    ggsave(paste0(pathImages, "fig5c", figureFormat), width=12, height=8, dpi = 300)
+}
+p
+```
+Fig. 5c). Empirical count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$) for ordered and disordered regions (consensus MobiDB annotations, no minimum length cut-off.). Amino acids are ordered by their propensity to promote structural order.
+
+
+# Presentation figures
+
+```{r}
+tr_all_sp %>%
+  ggplot(aes(x=n_effective, fill=Superkingdom)) +
+  xlim(c(0,40)) +
+  #scale_y_log10() +
+  geom_histogram(binwidth=1)
+```
+
+```{r}
+tr_all_sp %>%
+  ggplot(aes(x=n_effective, color=Superkingdom)) +
+  facet_wrap("Superkingdom", scales = "free") +
+  scale_x_continuous(lim=c(1,40)) +
+  scale_y_log10() +
+  #geom_density(adjust=4)# +
+  geom_histogram(binwidth=1,aes( fill=Superkingdom), alpha=.5, position="identity") +
+  labs(x="Repeat number")
+  
+```
+
+
+
+```{r}
+tr_all_sp %>%
+  ggplot(aes(x=l_effective, color=Superkingdom)) +
+  facet_wrap("Superkingdom", scales = "free") +
+  scale_x_continuous(lim=c(1,40)) +
+  scale_y_log10() +
+  #geom_density(adjust=4)# +
+  geom_histogram(binwidth=1,aes( fill=Superkingdom), alpha=.5, position="identity") +
+  labs(x="Repeat length")
+  
+```
+
+```{r}
+tr_all_sp %>% count(l_effective) %>% top_n(20)
+```
+

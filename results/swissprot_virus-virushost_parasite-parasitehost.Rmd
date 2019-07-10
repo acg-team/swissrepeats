@@ -1,0 +1,1837 @@
+---
+title: 'Virus - Virushost Species.'
+subtitle: 'A comparison of TR characteristics in viral proteins and the proteins of their host species.'
+output:
+  html_document:
+    toc: true
+  pdf_document: default
+date: "March, 2019"
+---
+
+# Housekeeping
+```{r Housekeeping, echo=FALSE, message=FALSE, warning=FALSE}
+# Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
+setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
+source("local_config.R")
+setwd(paste0(local_base_path,"/results"))
+
+rm(list = ls(all = TRUE))
+gc()
+source("helpers.R")
+
+# colour setup:
+#library(RColorBrewer); display.brewer.all() # to display available colour palettes
+colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
+getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
+cols1 <- c("#AA3939", "#AA7939", "#29506D", "#2D882D")  #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+cols2 <- c("#FFAAAA", "#FFDBAA", "#718EA4", "#88CC88") 
+cols3 <- c("#801515", "#805215", "#123652", "#116611")
+cols4 <- c("#550000", "#553100", "#042037", "#004400")
+
+# plot settings
+DOBARPLOT <- TRUE
+DOBARPLOT_STACK <- TRUE
+DOPIECHART <- TRUE
+```
+
+# Data Loading 
+```{r Data Loading, echo=FALSE, eval=TRUE}
+tr_path = paste0(local_path_separator, "results", local_path_separator,"tr_annotations", local_path_separator, "tr_annotations.csv")
+tr_all = load_tr_annotations(tr_path)
+
+sp_path = paste0(local_path_separator, "data", local_path_separator, "swissprot_annotations.tsv")
+sp_all = load_swissprot(sp_path, tr_all)
+
+# Add meta_data from sp_all to tr_all. -> Do a left join.
+tr_all_sp = merge(x = tr_all, y = sp_all, by = "ID", all.x = TRUE)
+```
+
+
+# Viral Proteins and their TRs
+Label each TR with a TR_identifier.
+```{r TR_id}
+## Problem: one Protein can have several TRs. To know (later when dataframe in long format) how many TRs a protein has, label them with an identifier.
+# nrow(tr_all_sp) # number of TRs
+# length(unique(tr_all_sp$ID)) # number of proteins with TRs
+tr_all_sp <- tr_all_sp %>% 
+  mutate(TR_id = row_number())
+```
+
+From all Tandem Repeats, select only those which are viral (Superkingdom = Viruses) and have a known Virushost.
+```{r "subset virushost == TRUE"}
+# filter all tandem repeat containing proteins from Swissprot which have annotated virushosts
+tr_all_sp_virus <- tr_all_sp[!(tr_all_sp$virus_hosts == ""),]
+```
+
+```{r Viral Proteins in general: summary statistics}
+# no. of viral proteins in Swissprot
+length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))
+nrow(sp_all[which(sp_all$Superkingdom == "Viruses"),])
+# %of viral proteins in swissprot
+length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))/ length(unique(sp_all$ID))
+
+# no. of viral proteins in Swissprot containing TRs
+length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")]))
+length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")])) / length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))
+
+# no. of TRs found in viral proteins in Swissprot 
+nrow(tr_all_sp[which(tr_all_sp$Superkingdom == "Viruses"),])
+
+# contingency table of all TR sequences found in viral proteins. 
+tr_all_sp_virus$ID <- factor(tr_all_sp_virus$ID, levels = unique(tr_all_sp_virus$ID)) # drop unused levels
+table(table(tr_all_sp_virus$ID))
+table(table(tr_all_sp_virus$ID)) / sum(table(table(tr_all_sp_virus$ID)))
+```
+Of the 16605 viral proteins in swissprot 44% contain at least one TR. Most (59%) of the viral proteins have a single TR.
+
+```{r Viral Proteins with annotated host species: summary statistics}
+# no. of viral proteins in Swissprot with annotated virus host
+length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses" & !sp_all$virus_hosts == "" & !is.na(sp_all$virus_hosts))]))
+
+# no. of viral proteins in Swissprot containing TRs and annotated virus hosts
+length(unique(tr_all_sp_virus$ID))
+
+# no. of TRs found in viral proteins and annotated virus hosts
+length(tr_all_sp_virus$ID)
+
+```
+Most of the viral proteins have annotated virushosts.
+
+```{r Viral Proteins simple statistics}
+# % of viral proteins all viral proteins in swissprot
+round(
+  length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")])) / length(unique(sp_all$ID)), 3)
+
+# % of viral proteins with 1 TR of all viral proteins in swissprot
+round(
+  length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")])) / length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")])), 3)
+
+# % of viral proteins with >= 4 TR of all viral proteins in swissprot
+morethan4 <- subset(data.frame(table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")])), Freq >= 4)
+round(
+  nrow(morethan4) / length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")])), 3)
+```
+### Summary
+Of the 16605 viral proteins in Swissprot KB, 7237 viral proteins contain at least one TR. In total we could detect 13337 TR-regions in viral proteins. (this info is already summarized in the table). We found further that of the 7237 viral proteins with TRs, 4227 have 1 TR, 1622 have 2TRs, 667 have 3TRs.
+Almost all viral proteins from Swissprot were annotated with the viral host (16531 proteins) and of those, 7197 contain at least one TR. Overall we could find 13263 TR-regions with annotated viral host.
+Of all curated proteins in Swissprot, 3% come from viruses. From all viral proteins, 43.6% contain at least one TR and 4.1% contain $\geq 4$ TR.
+NOTE: (200) more viral proteins and ~2000 proteins with TR less detected than julia msc thesis 
+
+
+# Virus host species and their TRs
+Viral TRs can be found in multiple host species. To get a tidy list, we put each host species in a single row and add two more columns with the Species taxonomic identifier of which the Superkingdom is determined by calling the NCBI Taxonomic Database.
+```{r virushosts and their Superkingdoms}
+###############
+### TR containing proteins
+###############
+## split the TR with multiple virus-hosts to get single entries for each virus host
+tr_all_sp_virus.long <- tr_all_sp_virus %>%
+  mutate(virus_hosts = strsplit(as.character(virus_hosts), "; ")) %>%
+  unnest(virus_hosts)
+
+## add column with virus_host_superkingdom: found by Species ID 
+# tr_all_sp_virus.long$Species_ID_virushost <- as.numeric(gsub("\\D", "", tr_all_sp_virus.long$virus_hosts)) # extract the TaxID from each virushost and add it as a seperate column
+tr_all_sp_virus.long$Species_ID_virushost <- as.numeric(sub("(?i).*TaxID: .*?(\\d+).*", "\\1", tr_all_sp_virus.long$virus_hosts)) # remove all letters. Basically just keep the numbers.
+# NOTE: is wrong, if the name contains numbers as i.e. Escherichia coli (strain K12) [TaxID: 83333] -> 1283333
+# (?i): Ignore case
+# .*TaxID: .*?: Any length of characters up to "TaxID: "
+# (\\d+): Capture one or more digits
+# "\\1": Return the capture group
+
+# tr_all_sp_virus.long$Superkingdom_virushost <- simplify2array(
+#   mclapply(tr_all_sp_virus.long$Species_ID_virushost, FUN = function(x){
+#     ifelse(x %in% sp_all$Species_ID, sp_all$Superkingdom[which(sp_all$Species_ID == x)], NA)},
+#     mc.cores = 7))
+#NOTE: works, but gives many NAs as it relies on the the species listed in swissprot.
+
+## add column with virus_host_superkingdom: found in NCBI https://www.ncbi.nlm.nih.gov/Taxonomy/TaxIdentifier/tax_identifier.cgi
+# write_csv(as.data.frame(tr_all_sp_virus.long$Species_ID_virushost), "/home/matteo/polybox/MSc_ACLS/swissrepeat/data/species_id_virushost2lineage.csv", col_names = FALSE)
+#NOTE: Server crashed when manually uploaded.
+
+# different approach with library taxize
+# species_ID2Superkingdom <- classification(tr_all_sp_virus.long$Species_ID_virushost, db = "ncbi", callopts=list(http_version = 0L)) # check local_config.R for setting up an API key.
+# # Curl trubleshooting (I got http2 error):
+# # 1. update curl: 
+# # install.packages("curl")
+# # 2. try this:
+# # httr::set_config(httr::config(http_version = 0))
+# NOTE: HTTP error 500 or curl error...
+# 
+# get_superkingdom <- function(species_id){
+#   return(classification(species_id, db = "ncbi")[[1]][2,1])
+# }
+# 
+# tr_all_sp_virus.long$Superkingdom_virushost[1:20] <- simplify2array(
+#   mclapply(tr_all_sp_virus.long$Species_ID_virushost[1:20], FUN = get_superkingdom,
+#     mc.cores = numcores))
+
+# Different approach with taxonomy file from NCBI Taxonomy database
+# manually downloaded NCBI taxonomy categories file:
+# read .dmp file which looks like tab separated
+taxid2superkingdom <- read.delim("/home/matteo/polybox/MSc_ACLS/swissrepeat/data/categories.dmp", header = FALSE, sep = "\t")
+colnames(taxid2superkingdom) <- c("superkingdom", "species_taxid", "taxid") # see readme file in data folder for detailed description
+taxid2superkingdom$superkingdom <- as.factor(taxid2superkingdom$superkingdom)
+
+tr_all_sp_virus.long$Superkingdom_virushost <- simplify2array(
+  mclapply(tr_all_sp_virus.long$Species_ID_virushost, FUN = function(x){
+    ifelse(x %in% taxid2superkingdom$taxid, as.character(taxid2superkingdom$superkingdom[which(taxid2superkingdom$taxid == x)]), NA)},
+    mc.cores = numcores))
+
+# remove entries with no Superkingdom_virushost
+# tr_all_sp_virus.long <- tr_all_sp_virus.long[which(!(tr_all_sp_virus.long$Superkingdom_virushost == "")),]
+# NOTE: don't do this by default. We want to know later on how many viral proteins with TR we could find
+
+# replace single letters with full names
+tr_all_sp_virus.long$Superkingdom_virushost[tr_all_sp_virus.long$Superkingdom_virushost == "E"] <- "Eukaryotic viruses"
+tr_all_sp_virus.long$Superkingdom_virushost[tr_all_sp_virus.long$Superkingdom_virushost == "B"] <- "Bacterial viruses"
+tr_all_sp_virus.long$Superkingdom_virushost[tr_all_sp_virus.long$Superkingdom_virushost == "A"] <- "archaeal viruses"
+
+# set levels to Species_virushost and Superkingdom_virushost
+tr_all_sp_virus.long$Species_ID_virushost <- factor(tr_all_sp_virus.long$Species_ID_virushost, levels = unique(tr_all_sp_virus.long$Species_ID_virushost))
+tr_all_sp_virus.long$Superkingdom_virushost <- factor(tr_all_sp_virus.long$Superkingdom_virushost, levels = unique(tr_all_sp_virus.long$Superkingdom_virushost))
+tr_all_sp_virus.long$TR_id <- factor(tr_all_sp_virus.long$TR_id, levels = unique(tr_all_sp_virus.long$TR_id))
+
+###############
+### all proteins from swissprot
+###############
+sp_all_virus <- sp_all[!(sp_all$virus_hosts == ""),]
+sp_all_virus.long <- sp_all_virus %>%
+  mutate(virus_hosts = strsplit(as.character(virus_hosts), "; ")) %>%
+  unnest(virus_hosts)
+head(sp_all_virus.long)
+sp_all_virus.long$Species_ID_virushost <- as.numeric(sub("(?i).*TaxID: .*?(\\d+).*", "\\1", sp_all_virus.long$virus_hosts)) # remove all letters. Basically just keep the numbers.
+
+sp_all_virus.long$Superkingdom_virushost <- simplify2array(
+  mclapply(sp_all_virus.long$Species_ID_virushost, FUN = function(x){
+    ifelse(x %in% taxid2superkingdom$taxid, as.character(taxid2superkingdom$superkingdom[which(taxid2superkingdom$taxid == x)]), NA)},
+    mc.cores = numcores))
+
+# remove entries with no Superkingdom_virushost
+#sp_all_virus.long <- sp_all_virus.long[which(!(sp_all_virus.long$Superkingdom_virushost == "")),]
+# NOTE: don't do this by default. We want to know later on how many viral proteins we could find
+
+# replace single letters with full names
+sp_all_virus.long$Superkingdom_virushost[sp_all_virus.long$Superkingdom_virushost == "E"] <- "Eukaryotic viruses"
+sp_all_virus.long$Superkingdom_virushost[sp_all_virus.long$Superkingdom_virushost == "B"] <- "Bacterial viruses"
+sp_all_virus.long$Superkingdom_virushost[sp_all_virus.long$Superkingdom_virushost == "A"] <- "archaeal viruses"
+
+# set levels to Species_virushost and Superkingdom_virushost
+sp_all_virus.long$Species_ID_virushost <- factor(sp_all_virus.long$Species_ID_virushost, levels = unique(sp_all_virus.long$Species_ID_virushost))
+sp_all_virus.long$Superkingdom_virushost <- factor(sp_all_virus.long$Superkingdom_virushost, levels = unique(sp_all_virus.long$Superkingdom_virushost))
+```
+
+## Summary statistics about the virushost superkingdom:
+```{r summary statistics of virushost}
+###############
+### TR containing proteins
+###############
+# no. of different virushosts
+length(unique(tr_all_sp_virus.long$Species_ID_virushost))
+
+# # how often each virus host superkingdom appears in TR
+table(tr_all_sp_virus.long$Superkingdom_virushost)
+
+# % of superkingdom
+eukaryotic_virushost_fraction <- round(table(tr_all_sp_virus.long$Superkingdom_virushost)[[1]]/sum(table(tr_all_sp_virus.long$Superkingdom_virushost)),3)
+eukaryotic_virushost_fraction
+bacterial_virushost_fraction <- round(table(tr_all_sp_virus.long$Superkingdom_virushost)[[2]]/sum(table(tr_all_sp_virus.long$Superkingdom_virushost)),3)
+bacterial_virushost_fraction
+archaeal_virushost_fraction <- round(table(tr_all_sp_virus.long$Superkingdom_virushost)[[3]]/sum(table(tr_all_sp_virus.long$Superkingdom_virushost)),3)
+archaeal_virushost_fraction
+
+unique(tr_all_sp_virus.long$Superkingdom_virushost)
+
+###############
+### all proteins from swissprot
+###############
+print("-------------------")
+# no. of different virushosts
+length(unique(sp_all_virus.long$Species_ID_virushost))
+
+# # how often each virus host superkingdom appears in TR
+table(sp_all_virus.long$Superkingdom_virushost)
+
+# % of superkingdom
+eukaryotic_virushost_fraction_sp_all <- round(table(sp_all_virus.long$Superkingdom_virushost)[[1]]/sum(table(sp_all_virus.long$Superkingdom_virushost)),3)
+eukaryotic_virushost_fraction_sp_all
+bacterial_virushost_fraction_sp_all <- round(table(sp_all_virus.long$Superkingdom_virushost)[[2]]/sum(table(sp_all_virus.long$Superkingdom_virushost)),3)
+bacterial_virushost_fraction_sp_all
+archaeal_virushost_fraction_sp_all <- round(table(sp_all_virus.long$Superkingdom_virushost)[[3]]/sum(table(sp_all_virus.long$Superkingdom_virushost)),3)
+archaeal_virushost_fraction_sp_all
+
+unique(sp_all_virus.long$Superkingdom_virushost)
+
+# no. of host species per viral protein
+table(table(sp_all_virus.long$ID[which(!is.na(sp_all_virus.long$Superkingdom_virushost))]))
+table(table(sp_all_virus.long$ID[which(!is.na(sp_all_virus.long$Superkingdom_virushost))]))[[1]] / sum(table(table(sp_all_virus.long$ID[which(!is.na(sp_all_virus.long$Superkingdom_virushost))])))
+
+```
+883 different virus host species where found over all known proteins.
+92.4\% of viral proteins have an eukaryotic host organism but only 5.8\% have a bacterial host organism and 1.8\% have archaeal hosts.
+
+771 different virus host species were found in viral Proteins containing TRs (and are annotated in Swissprot).
+95.4\% of viral TR-containing proteins have an eukaryotic host organism but only 3.5\% have a bacterial host organism and 1.1\% have archaeal hosts.
+
+CONCERN: biased data: more intensively investigated species (model organisms and humans) appear more often. Therefore we first count how often each species appears to be a hostspecies of a viral TR by building a contingency table of the Species Tax-ID. For the 20 most appearing Species-Tax-IDs we call the NCBI taxonomy server for the species name.
+```{r}
+x <- data.frame(table(tr_all_sp_virus.long$Species_ID_virushost)) # get counts of each virus host species tax id's
+x <- x[order(x$Freq, decreasing = TRUE),] # list the species_id which appears the most at top
+x <- x[1:20,] # look only at a subsection. Not to overload NCBI servers with requests ;-)
+
+get_taxname <- function(species_id){
+  evo_tree <- classification(as.character(species_id), db = "ncbi", callopts=list(http_version = 0L))[[1]]
+  return(evo_tree[nrow(evo_tree),1])
+}
+
+x$taxname_virushost[1:20] <- simplify2array(
+  lapply(x$Var1[1:20], FUN = get_taxname)) # mclapply doesn't work (too many requests ^^)
+head(x)
+```
+The initial concern doesn't seem to be true. As as the most appearing organisms are just after humans, wild swines and Acanthamoeba polyphaga which are no common model organisms.
+
+# Virushost species and their Proteins
+Look at the virushost species from all proteins listed in swissprot. Especially to those, with no TRs. 
+```{r sp_all.longs}
+## split the protein with multiple virus-hosts to get single entries for each virus host
+sp_all.long <- sp_all %>%
+  mutate(virus_hosts = strsplit(as.character(virus_hosts), "; ")) %>%
+  unnest(virus_hosts)
+
+## add column with virus_host_superkingdom: found by Species ID 
+# sp_all.long$Species_ID_virushost <- as.numeric(gsub("\\D", "", sp_all.long$virus_hosts)) # remove all letters. Basically just keep the numbers.
+# NOTE: is wrong, if the name contains numbers as i.e. Escherichia coli (strain K12) [TaxID: 83333] -> 1283333
+sp_all.long$Species_ID_virushost <- as.numeric(sub("(?i).*TaxID: .*?(\\d+).*", "\\1", sp_all.long$virus_hosts)) 
+# (?i): Ignore case
+# .*TaxID: .*?: Any length of characters up to "TaxID: "
+# (\\d+): Capture one or more digits
+# "\\1": Return the capture group
+
+# Different approach with taxonomy file from NCBI Taxonomy database
+# manually downloaded NCBI taxonomy categories file:
+# read .dmp file which looks like tab separated
+taxid2superkingdom <- read.delim("/home/matteo/polybox/MSc_ACLS/swissrepeat/data/categories.dmp", header = FALSE, sep = "\t")
+colnames(taxid2superkingdom) <- c("superkingdom", "species_taxid", "taxid") # see readme file in data folder for detailed description
+taxid2superkingdom$superkingdom <- as.factor(taxid2superkingdom$superkingdom)
+
+sp_all.long$Superkingdom_virushost <- simplify2array(
+  mclapply(sp_all.long$Species_ID_virushost, FUN = function(x){
+    ifelse(x %in% taxid2superkingdom$taxid, as.character(taxid2superkingdom$superkingdom[which(taxid2superkingdom$taxid == x)]), NA)},
+    mc.cores = numcores))
+
+# replace single letters with full names
+sp_all.long$Superkingdom_virushost[sp_all.long$Superkingdom_virushost == "E"] <- "Eukaryotic viruses"
+sp_all.long$Superkingdom_virushost[sp_all.long$Superkingdom_virushost == "B"] <- "Bacterial viruses"
+sp_all.long$Superkingdom_virushost[sp_all.long$Superkingdom_virushost == "A"] <- "archaeal viruses"
+
+# set levels to Species_virushost and Superkingdom_virushost
+sp_all.long$Species_ID_virushost <- factor(sp_all.long$Species_ID_virushost, levels = unique(sp_all.long$Species_ID_virushost))
+sp_all.long$Superkingdom_virushost <- factor(sp_all.long$Superkingdom_virushost, levels = unique(sp_all.long$Superkingdom_virushost))
+```
+
+```{r protein virus host summary stats}
+# no. of viral proteins sort by superkingdom of their host species
+table(sp_all.long$Superkingdom_virushost) 
+table(sp_all.long$Superkingdom_virushost)[[1]] / sum(table(sp_all.long$Superkingdom_virushost))
+table(sp_all.long$Superkingdom_virushost)[[2]] / sum(table(sp_all.long$Superkingdom_virushost))
+table(sp_all.long$Superkingdom_virushost)[[3]] / sum(table(sp_all.long$Superkingdom_virushost))
+
+# no. of host species per viral protein
+table(table(sp_all.long$ID[which(!is.na(sp_all.long$Superkingdom_virushost))]))
+table(table(sp_all.long$ID[which(!is.na(sp_all.long$Superkingdom_virushost))]))[[1]] / sum(table(table(sp_all.long$ID[which(!is.na(sp_all.long$Superkingdom_virushost))])))
+
+# protein names of viral proteins appearing in 23 different host species
+x <- as.data.frame(table(sp_all.long$ID[which(!is.na(sp_all.long$Superkingdom_virushost))]))[which(as.data.frame(table(sp_all.long$ID[which(!is.na(sp_all.long$Superkingdom_virushost))]))$Freq == 23),]
+unique(sp_all.long$protein_name[which(sp_all.long$ID %in% x$Var1)])
+
+# no. of host species per viral protein with TRs
+table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)])
+sum(table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)])) / sum(table(sp_all.long$Superkingdom_virushost) )
+
+table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)]) / table(sp_all.long$Superkingdom_virushost) 
+table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)])[[1]] / sum(table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)]))
+table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)])[[2]] / sum(table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)]))
+table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)])[[3]] / sum(table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)]))
+```
+From all viral proteins (which have a virushost), most of them have a eukaryotic virushost (25044, 92%) followed by bacterial virus host (6%) and archael (2%). Finally there were 3 Proteins from Staphylococcus phage Twort, which have itself as virushost. -> self produced viral proteins? Not reliable on host organism?
+Most of the viral proteins (10528, 72%) which can be associated with a host species, are found only in a single host species. Interestingly, some proteins can be found in up to 23 different host species. Those are capsid proteins and some replication assosiated proteins.
+43% of all viral proteins contain TRs. Of all TR containing viral proteins, 44% have a eukaryotic virushost. 
+
+# Combine Virus Protein information with Host-species Protein information
+### Problematic:
+One protein can have several TRs.
+```{r}
+select(tr_all_sp, TR_id, ID)[10:15,]
+```
+
+one Protein can have several origins (Species_ID), hence appear in different Superkingdoms.
+```{r}
+select(tr_all_sp, TR_id, ID, Species_ID)
+```
+
+one viral Protein can have multiple hosts and
+one viral TR can appear in multiple hosts (TR_id 8961 appear in host 4072, 4097, ...)
+```{r}
+select(tr_all_sp_virus.long, TR_id, ID, Species_ID, Species_ID_virushost)[8:19,]
+```
+
+### Attempt 1: Put all the information in one table
+#### Count TR by host Superkingdoms
+```{r TODO}
+## Initialize vectors for each host SK
+SK <- data.frame(Var1 = c("Eukaryotic_viruses", "Bacterial_viruses", "archaeal_viruses", "NAs"),
+                 Freq = c(0,0,0,0))
+
+## Determine for each viral TR it's host SK
+for ( i in tr_all_sp_virus.long$ID){
+  # SK <- table(tr_all_sp_virus.long$Superkingdom_virushost[1])
+  # SK <- SK + table(tr_all_sp_virus.long$Superkingdom_virushost[which(tr_all_sp_virus.long$TR_id == i)])
+  # print(table(tr_all_sp_virus.long$Superkingdom_virushost[which(tr_all_sp_virus.long$TR_id == i)]))
+  temp <- as.data.frame(table(tr_all_sp_virus.long$Superkingdom_virushost[which(tr_all_sp_virus.long$ID == i)]))
+  if (nrow(temp) == 0){
+    SK$Freq[which(SK$Var1 == "NAs")]  <- SK$Freq[which(SK$Var1 == "NAs")] + 1
+  } else {
+    for (j in 1:nrow(temp)){
+      # print(j)}}
+      if (temp[j,1] == "Eukaryotic viruses"){
+        SK$Freq[which(SK$Var1 == "Eukaryotic_viruses")]  <- SK$Freq[j] + temp$Freq[j]
+      } else if(temp[j,1] == "Bacterial viruses"){
+        SK$Freq[which(SK$Var1 == "Bacterial_viruses")]  <- SK$Freq[j] + temp$Freq[j]
+      } else if (temp[j,1] == "archaeal viruses"){
+        SK$Freq[which(SK$Var1 == "archaeal_viruses")]  <- SK$Freq[j] + temp$Freq[j]
+      }
+    }
+  }
+}
+
+SK
+```
+INTERPRETATION: 75357 viral TRs were detected in Eukaryotic hosts etc..
+TODO: Why so big numbers detected? sum(SK$Freq) = 218707
+because for each protein, even if it has multiple TRs (many $ID), all Superkingdoms are summed up
+
+
+
+### Attempt 2: Extract the information of each table seperately and put it toghether afterwards. Not all-in-one table
+To get the correlation between the TR content of viral proteins and the TR content of their host organisms. 
+TODO: Find out if more important to get the length of the TRs (how many units they have) or the TR content per protein?
+
+all proteins (w/ and w/o) which have a viral host annotated:
+```{r}
+nrow(sp_all[which(sp_all$virus_hosts != ""),])
+```
+all protein which have TRs and an annotated host:
+```{r}
+nrow(tr_all_sp[which(tr_all_sp$virus_hosts != ""),])
+```
+
+
+
+# why not cake diagram: http://static1.squarespace.com/static/56713bf4dc5cb41142f28d1f/5671e8bf816924fc22651410/5671eb2e816924fc22651bc9/1450306350612/devourThePie3.gif?format=original
+
+
+#### Look up table 
+for connecting virushost species which have proteins in swissprot with TRs with other tables by either TR_id for information retrieval per TR or Protein_id for information retrieval per Protein or Species_id for information about either TRs or Proteins per species and analogous for superkingdoms.
+```{r LUT}
+virushostspecies <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                               Protein_ID = tr_all_sp_virus.long$ID,
+                               Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                               Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+```
+
+```{r plot virus-virushost (Archaea)}
+#### Virushost information (all archaea which have a virus as host)
+# with >0 TRs
+df_archaea_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Archaea")]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+))
+# with 0 TRs
+df_archaea_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                      sp_all$ID %!in% tr_all_sp$ID & 
+                                                      sp_all$Superkingdom == "Archaea")]) # count all proteins coming from species which are virushost, have no TRs and are Achaea
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_archaea_virushost)<- c("nTR", "Freq")
+for (i in df_archaea_virushost$nTR){
+  if (i >4){
+    df_archaea_virushost$Freq[5] <- df_archaea_virushost$Freq[5] + df_archaea_virushost$Freq[which(df_archaea_virushost$nTR == i)] 
+  }
+}
+df_archaea_virushost <- df_archaea_virushost[1:5,]
+# calculate fraction of nTR
+df_archaea_virushost$fraction_nTR <- simplify2array(lapply(df_archaea_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_archaea_virushost$Freq), 3)}))
+df_archaea_virushost$Superkingdom <- rep("archaeal virus-host", nrow(df_archaea_virushost))
+
+#### Virus information (all viruses which have an archaea as host)
+# with >0 TRs
+df_archaea <- as.data.frame(table(
+  table(tr_all_sp_virus$ID[which(tr_all_sp_virus$TR_id %in% virushostspecies$TR_ID[which(virushostspecies$Superkingdom_virushost == "archaeal viruses")] )])
+))
+# with 0 TRs
+df_archaea[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$ID %in% sp_all.long$ID[which(sp_all.long$Superkingdom_virushost == "archaeal viruses")])])
+
+#NOTE: below is the first attempt which extracts the wrong data due to a logic error.
+## get all proteins with archaeal origin:
+# # with >0 TRs
+# df_archaea <- as.data.frame(table(
+#   table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Archaea")])
+# ))
+# 
+# # with 0 TRs
+# df_archaea[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$Superkingdom == "Archaea")])
+
+
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_archaea)<- c("nTR", "Freq")
+for (i in df_archaea$nTR){
+  if (i >4){
+    df_archaea$Freq[5] <- df_archaea$Freq[5] + df_archaea$Freq[which(df_archaea$nTR == i)] 
+  }
+}
+df_archaea <- df_archaea[1:5,]
+# calculate fraction of nTR
+df_archaea$fraction_nTR <- simplify2array(lapply(df_archaea$Freq, FUN = function(x){round(as.numeric(x)/sum(df_archaea$Freq), 3)}))
+df_archaea$Superkingdom <- rep("archaeal viruses", nrow(df_archaea))
+
+#### Put toghether Regular info and Virushost info:
+df_archaea <- rbind(df_archaea, df_archaea_virushost)
+# # test dataframe:
+# df_archaea <- data.frame(Superkingdom = c(rep("Archaea", 5), rep("Archaeal Virus", 5)),
+#                          fraction_nTR = c(rep(c(0.71,0.23,0.04,0.01,0.001), 2)),
+#                          nTR = c(rep(as.character(seq(0,4,1)))))
+df_archaea
+str(df_archaea)
+
+#### Add column to set correct label position
+df_archaea <- df_archaea %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+
+#### Plots
+p1a <- ggplot(data=df_archaea, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Archaea")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p1a <- beautifier(p1a)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p1a
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_archaea_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+p2a <- ggplot(data=df_archaea, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y") + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Archaea")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p2a <- beautifier(p2a)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  geom_label_repel(aes(y= labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+p2a
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_archaea_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p3a <- ggplot(data=df_archaea, aes(x=df_archaea$nTR, y=df_archaea$fraction_nTR, fill=df_archaea$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Archaea")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p3a <- beautifier(p3a)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p3a
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_archaea_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+```{r correlation analysis archaea}
+# Frequency
+df_archaea_test <- df_archaea %>% 
+  select(nTR, Freq, Superkingdom) %>% 
+  arrange(Superkingdom) %>% 
+  spread(Superkingdom, Freq)
+chisq.test(df_archaea_test$`archaeal virus-host`, df_archaea_test$`archaeal viruses`)
+
+# Ratio
+df_archaea_test <- df_archaea %>% 
+  select(nTR, fraction_nTR, Superkingdom) %>% 
+  arrange(Superkingdom) %>% 
+  spread(Superkingdom, fraction_nTR)
+chisq.test(df_archaea_test$`archaeal virus-host`, df_archaea_test$`archaeal viruses`)
+
+cor.test(df_archaea_test$`archaeal virus-host`, df_archaea_test$`archaeal viruses`, method = "spearman")
+```
+
+```{r plot virus-virushost (Bacteria) NEW}
+#### Virushost information (all bacteria which host a virus)
+# with >0 TRs
+df_bacteria_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Bacteria")]) # make frequency table of all TRs coming from species, which are virushosts and bacteria
+))
+# with 0 TRs
+df_bacteria_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                       sp_all$ID %!in% tr_all_sp$ID & 
+                                                       sp_all$Superkingdom == "Bacteria")]) # count all proteins coming from species which are virushost, have no TRs and are bacteria
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_bacteria_virushost)<- c("nTR", "Freq")
+for (i in df_bacteria_virushost$nTR){
+  if (i >4){
+    df_bacteria_virushost$Freq[5] <- df_bacteria_virushost$Freq[5] + df_bacteria_virushost$Freq[which(df_bacteria_virushost$nTR == i)] 
+  }
+}
+df_bacteria_virushost <- df_bacteria_virushost[1:5,]
+# calculate fraction of nTR
+df_bacteria_virushost$fraction_nTR <- simplify2array(lapply(df_bacteria_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_bacteria_virushost$Freq), 3)}))
+df_bacteria_virushost$Superkingdom <- rep("bacterial virus-host", nrow(df_bacteria_virushost))
+
+#### Virus information (all viruses which have an bacteria as host)
+# with >0 TRs
+df_bacteria <- as.data.frame(table(
+  table(tr_all_sp_virus$ID[which(tr_all_sp_virus$TR_id %in% virushostspecies$TR_ID[which(virushostspecies$Superkingdom_virushost == "Bacterial viruses")] )])
+))
+# with 0 TRs
+df_bacteria[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$ID %in% sp_all.long$ID[which(sp_all.long$Superkingdom_virushost == "Bacterial viruses")])])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_bacteria)<- c("nTR", "Freq")
+for (i in df_bacteria$nTR){
+  if (i >4){
+    df_bacteria$Freq[5] <- df_bacteria$Freq[5] + df_bacteria$Freq[which(df_bacteria$nTR == i)] 
+  }
+}
+df_bacteria <- df_bacteria[1:5,]
+# calculate fraction of nTR
+df_bacteria$fraction_nTR <- simplify2array(lapply(df_bacteria$Freq, FUN = function(x){round(as.numeric(x)/sum(df_bacteria$Freq), 3)}))
+df_bacteria$Superkingdom <- rep("bacterial viruses", nrow(df_bacteria))
+
+#### Put toghether Regular info and Virushost info:
+df_bacteria <- rbind(df_bacteria, df_bacteria_virushost)
+df_bacteria
+str(df_bacteria)
+
+#### Add column to set correct label position
+df_bacteria <- df_bacteria %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+#### Plots
+p1b <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Bacteria")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p1b <- beautifier(p1b)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p1b
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_bacteria_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+p2b <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y") + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Bacteria")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p2b <- beautifier(p2b)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  geom_label_repel(aes(y= labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+p2b
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_bacteria_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p3b <- ggplot(data=df_bacteria, aes(x=df_bacteria$nTR, y=df_bacteria$fraction_nTR, fill=df_bacteria$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Bacteria")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p3b <- beautifier(p3b)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p3b
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_bacteria_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+```{r plot virus-virushost (Bacteria) OLD}
+# #### Virushost information
+# # with >0 TRs
+# df_bacteria_virushost <- as.data.frame(table(
+#   table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+#                              tr_all_sp$Superkingdom == "Bacteria")]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+# ))
+# # with 0 TRs
+# df_bacteria_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+#                                                        sp_all$ID %!in% tr_all_sp$ID & 
+#                                                        sp_all$Superkingdom == "Bacteria")]) # count all proteins coming from species which are virushost, have no TRs and are Achaea
+# # sum all nTR > 4 and add to nTR = 4
+# colnames(df_bacteria_virushost)<- c("nTR", "Freq")
+# for (i in df_bacteria_virushost$nTR){
+#   if (i >4){
+#     df_bacteria_virushost$Freq[5] <- df_bacteria_virushost$Freq[5] + df_bacteria_virushost$Freq[which(df_bacteria_virushost$nTR == i)] 
+#   }
+# }
+# df_bacteria_virushost <- df_bacteria_virushost[1:5,]
+# # calculate fraction of nTR
+# df_bacteria_virushost$fraction_nTR <- simplify2array(lapply(df_bacteria_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_bacteria_virushost$Freq), 3)}))
+# df_bacteria_virushost$Superkingdom <- rep("Bacterial Virushost", nrow(df_bacteria_virushost))
+# 
+# #### Regular information
+# ## get all proteins with bacterial origin:
+# # with >0 TRs
+# df_bacteria <- as.data.frame(table(
+#   table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Bacteria")])
+# ))
+# # with 0 TRs
+# df_bacteria[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$Superkingdom == "Bacteria")])
+# # sum all nTR > 4 and add to nTR = 4
+# colnames(df_bacteria)<- c("nTR", "Freq")
+# for (i in df_bacteria$nTR){
+#   if (i >4){
+#     df_bacteria$Freq[5] <- df_bacteria$Freq[5] + df_bacteria$Freq[which(df_bacteria$nTR == i)] 
+#   }
+# }
+# df_bacteria <- df_bacteria[1:5,]
+# # calculate fraction of nTR
+# df_bacteria$fraction_nTR <- simplify2array(lapply(df_bacteria$Freq, FUN = function(x){round(as.numeric(x)/sum(df_bacteria$Freq), 3)}))
+# df_bacteria$Superkingdom <- rep("Bacteria", nrow(df_bacteria))
+# 
+# #### Put toghether Regular info and Virushost info:
+# df_bacteria <- rbind(df_bacteria, df_bacteria_virushost)
+# df_bacteria
+# str(df_bacteria)
+# 
+# 
+# #### Plots
+# if (DOBARPLOT_STACK){
+#   p <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+#     geom_bar(stat="identity", position = "fill")+
+#     facet_grid(~Superkingdom)+
+#     # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+#     #           color="white", size=3.5)+
+#     # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+#     #                  segment.size = .5, direction = 'x')+
+#     scale_fill_brewer(palette="Dark2")+
+#     ggtitle("Bacteria")+
+#     labs(x="", y="Fraction", fill= "TR count")+
+#     theme_minimal()
+#   p <- beautifier(p)+
+#     theme(
+#       axis.title.x = element_blank(),
+#       panel.border = element_blank(),
+#       panel.grid.minor = element_blank(),
+#       panel.grid.major.x = element_blank(),
+#       axis.ticks = element_blank(),
+#       axis.text.x.bottom = element_blank(),
+#       plot.title=element_text(size=14, face="bold")
+#     )
+#   p
+#   if (save == TRUE) {
+#     ggsave(paste0(pathImages, "virus_virushost_bacteria_bar", figureFormat), width=12, height=8, dpi = 300)}
+# } else if (DOPIECHART) { # piechart
+#   p <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+#     geom_bar(stat="identity", position = "fill")+
+#     coord_polar("y") + 
+#     facet_grid(~Superkingdom)+
+#     # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+#     #           color="white", size=3.5)+
+#     scale_fill_brewer(palette="Dark2")+
+#     # ggtitle("Bacteria")+
+#     labs(fill= "TR count")+
+#     theme_minimal()
+#   p <- beautifier(p)+
+#     theme(
+#       axis.title.x = element_blank(),
+#       axis.title.y = element_blank(),
+#       panel.border = element_blank(),
+#       panel.grid=element_blank(),
+#       axis.ticks = element_blank(),
+#       axis.text = element_blank(),
+#       strip.text = element_text(size=14, face="bold")
+#       # plot.title=element_text(size=14, face="bold")
+#     )+
+#     geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+#                      segment.size = .5, direction = 'x')
+#   p
+#   if (save == TRUE) {
+#     ggsave(paste0(pathImages, "virus_virushost_bacteria_pie", figureFormat), width=12, height=8, dpi = 300)}
+# } else if (DOBARPLOT) {
+#   p <- ggplot(data=df_bacteria, aes(x=df_bacteria$nTR, y=df_bacteria$fraction_nTR, fill=df_bacteria$nTR)) +
+#     geom_bar(stat="identity")+
+#     facet_grid(~Superkingdom)+
+#     # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+#     #           color="white", size=3.5)+
+#     # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+#     #                  segment.size = .5, direction = 'x')+
+#     # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+#     scale_fill_brewer(palette="Dark2")+
+#     ggtitle("Bacteria")+
+#     # labs(y="Fraction", x= "TR count", fill = "TR count")+
+#     labs(y="Fraction", x= "TR count", fill = "TR count")+
+#     theme_minimal()
+#   p <- beautifier(p)+
+#     theme(
+#       axis.title.x = element_blank(),
+#       panel.border = element_blank(),
+#       panel.grid.minor = element_blank(),
+#       panel.grid.major.x = element_blank(),
+#       axis.ticks = element_blank(),
+#       axis.text.x.bottom = element_blank(),
+#       # axis.text.x.bottom = element_text(angle = 0),
+#       plot.title=element_text(size=14, face="bold")
+#     )
+#   p 
+#   if (save == TRUE) {
+#     ggsave(paste0(pathImages, "virus_virushost_bacteria_bar2", figureFormat), width=12, height=8, dpi = 300)}
+# }
+```
+
+
+```{r plot virus-virushost (Eukaryota): Look up by species id}
+#### Virushost information
+# with >0 TRs
+df_eukaryota_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Eukaryota")])
+))
+# make frequency table of all TRs coming fromk eukaryotic virushost species.
+
+# with 0 TRs
+df_eukaryota_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                        sp_all$ID %!in% tr_all_sp$ID & 
+                                                        sp_all$Superkingdom == "Eukaryota")]) # count all proteins coming from species which are virushost, have no TRs and are Achaea
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota_virushost)<- c("nTR", "Freq")
+for (i in df_eukaryota_virushost$nTR){
+  if (i >4){
+    df_eukaryota_virushost$Freq[5] <- df_eukaryota_virushost$Freq[5] + df_eukaryota_virushost$Freq[which(df_eukaryota_virushost$nTR == i)] 
+  }
+}
+df_eukaryota_virushost <- df_eukaryota_virushost[1:5,]
+# calculate fraction of nTR
+df_eukaryota_virushost$fraction_nTR <- simplify2array(lapply(df_eukaryota_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota_virushost$Freq), 3)}))
+df_eukaryota_virushost$Superkingdom <- rep("Eukaryotic Virushost", nrow(df_eukaryota_virushost))
+
+#### Regular information
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_eukaryota <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Eukaryota")])
+))
+# with 0 TRs
+df_eukaryota[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$Superkingdom == "Eukaryota")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota)<- c("nTR", "Freq")
+for (i in df_eukaryota$nTR){
+  if (i >4){
+    df_eukaryota$Freq[5] <- df_eukaryota$Freq[5] + df_eukaryota$Freq[which(df_eukaryota$nTR == i)] 
+  }
+}
+df_eukaryota <- df_eukaryota[1:5,]
+# calculate fraction of nTR
+df_eukaryota$fraction_nTR <- simplify2array(lapply(df_eukaryota$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota$Freq), 3)}))
+df_eukaryota$Superkingdom <- rep("Eukaryota", nrow(df_eukaryota))
+
+#### Put toghether Regular info and Virushost info:
+df_eukaryota <- rbind(df_eukaryota, df_eukaryota_virushost)
+
+#### Add column to set correct label position
+df_eukaryota <- df_eukaryota %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+df_eukaryota
+str(df_eukaryota)
+
+
+#### Plots
+p1e <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  ggtitle("Eukaryota")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p1e <- beautifier(p1e)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p1e
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+p2e <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y") + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Eukaryota")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p2e <- beautifier(p2e)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  geom_label_repel(aes(y=labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+# geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+#           color="white", size=3.5)
+p2e
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p3e <- ggplot(data=df_eukaryota, aes(x=df_eukaryota$nTR, y=df_eukaryota$fraction_nTR, fill=df_eukaryota$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Eukaryota")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p3e <- beautifier(p3e)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p3e
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+
+same as above, but with the logic from extracting species level information (as i.e. for humans)
+Why slightly different results? -> With the approach of looking up the information about the superkingdom by tr_id (below), we find higher numbers for 0 TRs but less for >0TRs. Probably due to missing results in ```sp_all$Superkingdom``` which comes from 2015 swissprot entries and the ```virushostspecies_sp$Superkingdom_virushost``` is from 2019 ncbi taxonomy database which is expected to be more up to date with more entries
+```{r plot virus-virushost (eukaryota): by tr_id}
+# virushost species which have trs in swissprot
+virushostspecies_tr <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                                  Protein_ID = tr_all_sp_virus.long$ID,
+                                  Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                                  Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+#### Virushost information
+# with >0 TRs
+df_eukaryota_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$TR_id %in% virushostspecies_tr$TR_ID[which(virushostspecies_tr$Superkingdom_virushost == "Eukaryotic viruses")])]))) 
+# make frequency table of all TRs coming fromk eukaryotic virushost species.
+
+# with 0 TRs
+# virushost species which have proteins in swissprot
+virushostspecies_sp <- data.frame(Protein_ID = sp_all.long$ID,
+                                  Species_ID_virushost = sp_all.long$Species_ID_virushost,
+                                  Superkingdom_virushost = sp_all.long$Superkingdom_virushost)
+
+df_eukaryota_virushost[1,2] <- length(sp_all$ID[which(sp_all$ID %in% as.character(virushostspecies_sp$Protein_ID[which(virushostspecies_sp$Superkingdom_virushost == "Eukaryotic viruses")]) &
+                                                        sp_all$ID %!in% tr_all_sp$ID)]) # Take all viral proteins which are from a human host species. From those, select 
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota_virushost)<- c("nTR", "Freq")
+for (i in df_eukaryota_virushost$nTR){
+  if (i >4){
+    df_eukaryota_virushost$Freq[5] <- df_eukaryota_virushost$Freq[5] + df_eukaryota_virushost$Freq[which(df_eukaryota_virushost$nTR == i)] 
+  }
+}
+df_eukaryota_virushost <- df_eukaryota_virushost[1:5,]
+# calculate fraction of nTR
+df_eukaryota_virushost$fraction_nTR <- simplify2array(lapply(df_eukaryota_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota_virushost$Freq), 3)}))
+df_eukaryota_virushost$Superkingdom <- rep("Eukaryotic Virushost", nrow(df_eukaryota_virushost))
+
+#### Regular information
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_eukaryota <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Eukaryota")])
+))
+# with 0 TRs
+df_eukaryota[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & 
+                                              sp_all$Superkingdom == "Eukaryota")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota)<- c("nTR", "Freq")
+for (i in df_eukaryota$nTR){
+  if (i >4){
+    df_eukaryota$Freq[5] <- df_eukaryota$Freq[5] + df_eukaryota$Freq[which(df_eukaryota$nTR == i)] 
+  }
+}
+df_eukaryota <- df_eukaryota[1:5,]
+# calculate fraction of nTR
+df_eukaryota$fraction_nTR <- simplify2array(lapply(df_eukaryota$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota$Freq), 3)}))
+df_eukaryota$Superkingdom <- rep("Eukaryota", nrow(df_eukaryota))
+
+#### Put toghether Regular info and Virushost info:
+df_eukaryota <- rbind(df_eukaryota, df_eukaryota_virushost)
+
+#### Add column to set correct label position
+df_eukaryota <- df_eukaryota %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+df_eukaryota
+str(df_eukaryota)
+
+#### Plots
+p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=df_eukaryota$fraction_nTR, fill=df_eukaryota$nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Eukaryota")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p 
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota2_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y", start = 0, direction = -1) + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Eukaryota")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')
+  # geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)
+  geom_label_repel(aes(y=labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+
+p
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota2_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p <- ggplot(data=df_eukaryota, aes(x=df_eukaryota$nTR, y=df_eukaryota$fraction_nTR, fill=df_eukaryota$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Eukaryota2")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p 
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota2_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+
+```{r plot virus-virushost (Eukaryota) NEW}
+#### Virushost information (all eukaryota which have a virus as host)
+# with >0 TRs
+df_eukaryota_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species_ID %in% virushostspecies$Species_ID_virushost & 
+                             tr_all_sp$Superkingdom == "Eukaryota")]) # make frequency table of all TRs coming from species, which are virushosts and eukaryota
+))
+# with 0 TRs
+df_eukaryota_virushost[1,2] <- length(sp_all$ID[which(sp_all$Species_ID %in% virushostspecies$Species_ID_virushost &
+                                                        sp_all$ID %!in% tr_all_sp$ID & 
+                                                        sp_all$Superkingdom == "Eukaryota")]) # count all proteins coming from species which are virushost, have no TRs and are eukaryota
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota_virushost)<- c("nTR", "Freq")
+for (i in df_eukaryota_virushost$nTR){
+  if (i >4){
+    df_eukaryota_virushost$Freq[5] <- df_eukaryota_virushost$Freq[5] + df_eukaryota_virushost$Freq[which(df_eukaryota_virushost$nTR == i)] 
+  }
+}
+df_eukaryota_virushost <- df_eukaryota_virushost[1:5,]
+# calculate fraction of nTR
+df_eukaryota_virushost$fraction_nTR <- simplify2array(lapply(df_eukaryota_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota_virushost$Freq), 3)}))
+df_eukaryota_virushost$Superkingdom <- rep("eukaryotic virus-host", nrow(df_eukaryota_virushost))
+
+#### Virus information (all viruses which have an eukaryota as host)
+# with >0 TRs
+df_eukaryota <- as.data.frame(table(
+  table(tr_all_sp_virus$ID[which(tr_all_sp_virus$TR_id %in% virushostspecies$TR_ID[which(virushostspecies$Superkingdom_virushost == "Eukaryotic viruses")] )])
+))
+# with 0 TRs
+df_eukaryota[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & sp_all$ID %in% sp_all.long$ID[which(sp_all.long$Superkingdom_virushost == "Eukaryotic viruses")])])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_eukaryota)<- c("nTR", "Freq")
+for (i in df_eukaryota$nTR){
+  if (i >4){
+    df_eukaryota$Freq[5] <- df_eukaryota$Freq[5] + df_eukaryota$Freq[which(df_eukaryota$nTR == i)] 
+  }
+}
+df_eukaryota <- df_eukaryota[1:5,]
+# calculate fraction of nTR
+df_eukaryota$fraction_nTR <- simplify2array(lapply(df_eukaryota$Freq, FUN = function(x){round(as.numeric(x)/sum(df_eukaryota$Freq), 3)}))
+df_eukaryota$Superkingdom <- rep("eukaryotic viruses", nrow(df_eukaryota))
+
+#### Put toghether Regular info and Virushost info:
+df_eukaryota <- rbind(df_eukaryota, df_eukaryota_virushost)
+df_eukaryota
+str(df_eukaryota)
+
+#### Add column to set correct label position
+df_eukaryota <- df_eukaryota %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+#### Plots
+p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Eukaryota")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+pe <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y") + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Eukaryota")+
+  labs(fill= "TR count")+
+  theme_minimal()
+pe <- beautifier(pe)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')
+  # geom_label_repel(aes(y = fraction_nTR, label = paste0(perc,"%")), size=4, show.legend = F, nudge_x = 1,
+  #                segment.size = .5, direction = 'x')
+  geom_label_repel(aes(y = labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+pe
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p <- ggplot(data=df_eukaryota, aes(x=df_eukaryota$nTR, y=df_eukaryota$fraction_nTR, fill=df_eukaryota$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Eukaryota")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p <- beautifier(p)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p 
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+
+
+there are many missing Species_ID i.e. the one from homo sapiens. For the ones, where we have a Species name, we can fill it in with the data from ncbi dowloaded above.
+```{r TODO: NCBI seems to crash.... }
+# x <- sp_all[which(is.na(sp_all$Species_ID) & !is.na(sp_all$Species)), c(9,10)] # filter all proteins which have a missing species_id but do have a species name.
+# species2species_id <- data.frame(Species_ID = seq(1, length(unique(x$Species))),
+#                                  Species = seq(1, length(unique(x$Species))))
+# species2species_id$Species <- unique(x$Species) # take all unique species names
+# 
+# get_species_id <- function(species_name){
+#   evo_tree <- try(classification(as.character(species_name), db = "ncbi", callopts=list(http_version = 0L))[[1]])
+#   if (class(evo_tree) == "try-error") {
+#     return(NA)
+#   } else {
+#       return(evo_tree[nrow(evo_tree),ncol(evo_tree)])
+#   }
+# }
+# 
+# species2species_id$Species_ID[1:2] <- simplify2array(
+#   lapply(species2species_id$Species[1:2], FUN = get_species_id)) # mclapply doesn't work (too many requests ^^)
+# species2species_id
+
+```
+Let's query then by species name
+
+```{r plot virus-virushost (Homo Sapiens)}
+#### Virushost information
+# virushost species which have trs in swissprot
+virushostspecies_tr <- data.frame(TR_ID = tr_all_sp_virus.long$TR_id,
+                                  Protein_ID = tr_all_sp_virus.long$ID,
+                                  Species_ID_virushost = tr_all_sp_virus.long$Species_ID_virushost,
+                                  Superkingdom_virushost = tr_all_sp_virus.long$Superkingdom_virushost)
+
+# with >0 TRs
+df_human_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$TR_id %in% virushostspecies_tr$TR_ID[which(virushostspecies_tr$Species_ID_virushost ==9606)])]) # make frequency table of all TRs coming from species, which are virushosts and Archaea
+))
+# with 0 TRs
+# virushost species which have proteins in swissprot
+virushostspecies_sp <- data.frame(Protein_ID = sp_all.long$ID,
+                                  Species_ID_virushost = sp_all.long$Species_ID_virushost,
+                                  Superkingdom_virushost = sp_all.long$Superkingdom_virushost)
+
+df_human_virushost[1,2] <- length(sp_all$ID[which(sp_all$ID %in% as.character(virushostspecies_sp$Protein_ID[which(virushostspecies_sp$Species_ID_virushost ==9606)]) &
+                                                    sp_all$ID %!in% tr_all_sp$ID)]) # Take all viral proteins which are from a human host species. From those, select 
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_human_virushost)<- c("nTR", "Freq")
+for (i in df_human_virushost$nTR){
+  if (i >4){
+    df_human_virushost$Freq[5] <- df_human_virushost$Freq[5] + df_human_virushost$Freq[which(df_human_virushost$nTR == i)] 
+  }
+}
+df_human_virushost <- df_human_virushost[1:5,]
+# calculate fraction of nTR
+df_human_virushost$fraction_nTR <- simplify2array(lapply(df_human_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_human_virushost$Freq), 3)}))
+df_human_virushost$Superkingdom <- rep("Human virus-host", nrow(df_human_virushost))
+
+#### Regular information
+
+## get all proteins with archaeal origin:
+# with >0 TRs
+df_human <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species == "Homo sapiens (Human)")])
+))
+# with 0 TRs
+df_human[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & 
+                                          sp_all$Species == "Homo sapiens (Human)")])
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_human)<- c("nTR", "Freq")
+for (i in df_human$nTR){
+  if (i >4){
+    df_human$Freq[5] <- df_human$Freq[5] + df_human$Freq[which(df_human$nTR == i)] 
+  }
+}
+df_human <- df_human[1:5,]
+# calculate fraction of nTR
+df_human$fraction_nTR <- simplify2array(lapply(df_human$Freq, FUN = function(x){round(as.numeric(x)/sum(df_human$Freq), 3)}))
+df_human$Superkingdom <- rep("Human", nrow(df_human))
+
+#### Put toghether Regular info and Virushost info:
+df_human <- rbind(df_human, df_human_virushost)
+
+#### Add column to set correct label position
+df_human <- df_human %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+df_human
+str(df_human)
+
+# annotation data-frame
+# ann_text <- data.frame(fraction_nTR = factor(as.character( c((df_human$fraction_nTR[1:5]), (df_human$fraction_nTR[6:10])))),
+#                        lab = as.character( c((df_human$fraction_nTR[1:5]), (df_human$fraction_nTR[6:10]))),
+#                        Superkingdom = df_human$Superkingdom)
+
+#### Plots
+p1h <- ggplot(data=df_human, aes(x=factor(1), y=df_human$fraction_nTR, fill=df_human$nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Homo sapiens")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p1h <- beautifier(p1h)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p1h
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+p2h <- ggplot(data=df_human, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y", start = 0, direction = -1) + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Homo sapiens")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p2h <- beautifier(p2h)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')
+  # geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)
+  geom_label_repel(aes(y=labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+
+p2h
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p3h <- ggplot(data=df_human, aes(x=df_human$nTR, y=df_human$fraction_nTR, fill=df_human$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Homo sapiens")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p3h <- beautifier(p3h)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p3h
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+```{r plot virus-virushost (Homo Sapiens) NEW}
+#### Virushost information (all Homo Sapiens proteins (No need to select anything other, since homo sapiens is a virus-host))
+### get all proteins with human origin:
+# with >0 TRs
+df_human <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$Species == "Homo sapiens (Human)")])
+))
+# with 0 TRs
+df_human[1,2] <- length(sp_all$ID[which(sp_all$ID %!in% tr_all_sp$ID & 
+                                          sp_all$Species == "Homo sapiens (Human)")])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_human)<- c("nTR", "Freq")
+for (i in df_human$nTR){
+  if (i >4){
+    df_human$Freq[5] <- df_human$Freq[5] + df_human$Freq[which(df_human$nTR == i)] 
+  }
+}
+df_human <- df_human[1:5,]
+# calculate fraction of nTR
+df_human$fraction_nTR <- simplify2array(lapply(df_human$Freq, FUN = function(x){round(as.numeric(x)/sum(df_human$Freq), 3)}))
+df_human$Superkingdom <- rep("human virus-host", nrow(df_human))
+
+
+#### Virus information (all viruses which have a human as host)
+# with >0 TRs
+df_human_virushost <- as.data.frame(table(
+  table(tr_all_sp$ID[which(tr_all_sp$TR_id %in% virushostspecies$TR_ID[which(virushostspecies$Species_ID_virushost == 9606)])]) # make frequency table of all TRs coming from species, which are virushosts and human
+))
+
+# with 0 TRs
+df_human_virushost[1,2] <- length(sp_all$ID[which(sp_all$ID %in% as.character(sp_all.long$ID[which(sp_all.long$Species_ID_virushost == 9606)]) &
+                                                    sp_all$ID %!in% tr_all_sp$ID)]) # Take all viral proteins which are from a human host species. From those, select 
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_human_virushost )<- c("nTR", "Freq")
+for (i in df_human_virushost $nTR){
+  if (i >4){
+    df_human_virushost$Freq[5] <- df_human_virushost$Freq[5] + df_human_virushost$Freq[which(df_human_virushost$nTR == i)] 
+  }
+}
+df_human_virushost <- df_human_virushost[1:5,]
+# calculate fraction of nTR
+df_human_virushost$fraction_nTR <- simplify2array(lapply(df_human_virushost$Freq, FUN = function(x){round(as.numeric(x)/sum(df_human_virushost$Freq), 3)}))
+df_human_virushost$Superkingdom <- rep("human viruses", nrow(df_human_virushost))
+
+#### Put toghether Regular info and Virushost info:
+df_human <- rbind(df_human, df_human_virushost)
+
+#### Add column to set correct label position
+df_human <- df_human %>% 
+  arrange(Superkingdom, desc(nTR)) %>% 
+  group_by(Superkingdom) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+df_human
+str(df_human)
+
+#### Plots
+p1h <- ggplot(data=df_human, aes(x=factor(1), y=df_human$fraction_nTR, fill=df_human$nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Homo sapiens")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p1h <- beautifier(p1h)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+p1h
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_bar", figureFormat), width=12, height=8, dpi = 300)}
+p2h <- ggplot(data=df_human, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y", start = 0, direction = -1) + 
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Homo sapiens")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p2h <- beautifier(p2h)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=14, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  geom_label_repel(aes(y = labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+# geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+#          color="white", size=3.5)
+p2h
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_pie", figureFormat), width=12, height=8, dpi = 300)}
+p3h <- ggplot(data=df_human, aes(x=df_human$nTR, y=df_human$fraction_nTR, fill=df_human$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~Superkingdom)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Homo sapiens")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p3h <- beautifier(p3h)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+p3h
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_human_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+```{r arrange cake diagrams in one plot}
+require(ggpubr)
+figure <- ggarrange(p2a, p2b, pe, p2h,
+                    labels = c("A", "B", "C", "D"),
+                    ncol = 2, nrow = 2)
+figure
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "virus_virushost_cake_all", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+Proteins often have more than one single TR per protein. We show the number of TRs per protein divided by the total amount of proteins per group. As grouping factor we show in plots A, B, C the three superkingdoms each split into superkingdom specific viruses and their hosts. The analogous principle is shown in plot D but for human related viruses compared to the TR distribution in human proteins (because humans are BLABLA awesome... TODO)
+It can be seen, that overall viruses have more proteins without any TR than their host organisms. Virus-hosts have overall more proteins with only one single TR - which is not very distinct for Humans and their viruses. 
+TODO: is there more to see?
+
+
+
+https://www.britannica.com/science/community-ecology/Community-equilibrium-and-species-diversity#ref588152
+```{r plot species-specieshost (plasmodium spp.)}
+#### Parasite information (plasmodium spp.)
+# with >0 TRs
+parasite_tr <- tr_all_sp[grepl(pattern = "Plasmodium", x = tr_all_sp$Species),]
+df_parasite <- as.data.frame(table(
+  table(parasite_tr$ID)
+))
+
+# with 0 TRs
+parasite_sp <- sp_all[grepl(pattern = "Plasmodium", x = sp_all$Species),]
+df_parasite[1,2] <- length(parasite_sp$ID[which(parasite_sp$ID %!in% parasite_tr$ID)])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_parasite)<- c("nTR", "Freq")
+for (i in df_parasite$nTR){
+  if (i >4){
+    df_parasite$Freq[5] <- df_parasite$Freq[5] + df_parasite$Freq[which(df_parasite$nTR == i)] 
+  }
+}
+df_parasite <- df_parasite[1:5,]
+# calculate fraction of nTR
+df_parasite$fraction_nTR <- simplify2array(lapply(df_parasite$Freq, FUN = function(x){round(as.numeric(x)/sum(df_parasite$Freq), 3)}))
+df_parasite$organism <- rep("Plasmodium spp.", nrow(df_parasite))
+
+#### Intermediate host information (anopheles)
+# with >0 TRs
+intermediate_host_tr <- tr_all_sp[grepl(pattern = "Anopheles", x = tr_all_sp$Species),]
+df_intermediate_host <- as.data.frame(table(
+  table(intermediate_host_tr$ID)
+))
+
+# with 0 TRs
+intermediate_host_sp <- sp_all[grepl(pattern = "Anopheles", x = sp_all$Species),]
+df_intermediate_host[1,2] <- length(intermediate_host_sp$ID[which(intermediate_host_sp$ID %!in% intermediate_host_tr$ID)])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_intermediate_host)<- c("nTR", "Freq")
+for (i in df_intermediate_host$nTR){
+  if (i >4){
+    df_intermediate_host$Freq[5] <- df_intermediate_host$Freq[5] + df_intermediate_host$Freq[which(df_intermediate_host$nTR == i)] 
+  }
+}
+df_intermediate_host <- df_intermediate_host[1:5,]
+# calculate fraction of nTR
+df_intermediate_host$fraction_nTR <- simplify2array(lapply(df_intermediate_host$Freq, FUN = function(x){round(as.numeric(x)/sum(df_intermediate_host$Freq), 3)}))
+df_intermediate_host$organism <- rep("Anopheles spp.", nrow(df_intermediate_host))
+
+### final host information (human)
+# with >0 TRs
+final_host_tr <- tr_all_sp[grepl(pattern = "Homo sapiens", x = tr_all_sp$Species),]
+df_final_host <- as.data.frame(table(
+  table(final_host_tr$ID)
+))
+
+# with 0 TRs
+final_host_sp <- sp_all[grepl(pattern = "Homo sapiens", x = sp_all$Species),]
+df_final_host[1,2] <- length(final_host_sp$ID[which(final_host_sp$ID %!in% final_host_tr$ID)])
+
+# sum all nTR > 4 and add to nTR = 4
+colnames(df_final_host)<- c("nTR", "Freq")
+for (i in df_final_host$nTR){
+  if (i >4){
+    df_final_host$Freq[5] <- df_final_host$Freq[5] + df_final_host$Freq[which(df_final_host$nTR == i)] 
+  }
+}
+df_final_host <- df_final_host[1:5,]
+# calculate fraction of nTR
+df_final_host$fraction_nTR <- simplify2array(lapply(df_final_host$Freq, FUN = function(x){round(as.numeric(x)/sum(df_final_host$Freq), 3)}))
+df_final_host$organism <- rep("Homo sapiens (Human)", nrow(df_final_host))
+
+
+#### Put toghether Regular info and Virushost info:
+df_parasite <- rbind(df_parasite, df_intermediate_host, df_final_host)
+
+#### Add column to set correct label position
+df_parasite <- df_parasite %>% 
+  arrange(organism, desc(nTR)) %>% 
+  group_by(organism) %>% 
+  mutate(labpos = cumsum(fraction_nTR) - fraction_nTR/2)
+
+#### releveling for display in meaningful order:
+df_parasite$organism <- factor(df_parasite$organism, levels = c("Plasmodium spp.", "Anopheles spp.", "Homo sapiens (Human)"))
+
+df_parasite
+str(df_parasite)
+
+#### Plots
+p1p <- ggplot(data=df_parasite, aes(x=factor(1), y=df_parasite$fraction_nTR, fill=df_parasite$nTR)) +
+  geom_bar(stat="identity", position = "fill")+
+  facet_grid(~organism)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  ggtitle("Homo sapiens")+
+  labs(x="", y="Fraction", fill= "TR count")+
+  theme_minimal()
+p1p <- beautifier(p1p)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+print(p1p)
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "parasite_parasitehosts_bar", figureFormat), width=12, height=8, dpi = 300)}
+
+p2p <- ggplot(data=df_parasite, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TODO: fix labeling according to: https://stackoverflow.com/questions/24803460/r-ggplot2-add-labels-on-facet-pie-chart
+  geom_bar(stat="identity", position = "fill")+
+  coord_polar("y", start = 0, direction = -1) + 
+  facet_grid(~organism)+
+  # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
+  #           color="white", size=3.5)+
+  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # ggtitle("Homo sapiens")+
+  labs(fill= "TR count")+
+  theme_minimal()
+p2p <- beautifier(p2p)+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    strip.text = element_text(size=12, face="bold")
+    # plot.title=element_text(size=14, face="bold")
+  )+
+  # geom_label_repel(aes(label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')
+  # geom_text(aes(y=labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)
+  geom_label_repel(aes(y=labpos, label = paste0(fraction_nTR*100,"%")), size=4, show.legend = F, nudge_x = 1,
+                   segment.size = .5, direction = 'x')
+
+print(p2p)
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "parasite_parasitehosts_pie", figureFormat), width=12, height=8, dpi = 300)}
+
+p3p <- ggplot(data=df_parasite, aes(x=df_parasite$nTR, y=df_parasite$fraction_nTR, fill=df_parasite$nTR)) +
+  geom_bar(stat="identity")+
+  facet_grid(~organism)+
+  # geom_text(aes(y = labpos, label=paste0(fraction_nTR*100,"%")), vjust=1.6,
+  #           color="white", size=3.5)+
+  # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
+  #                  segment.size = .5, direction = 'x')+
+  # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
+  scale_fill_brewer(palette="Dark2")+
+  ggtitle("Parasite - Parasite-host")+
+  # labs(y="Fraction", x= "TR count", fill = "TR count")+
+  labs(y="Fraction", x= "TR count", fill = "TR count")+
+  theme_minimal()
+p3p <- beautifier(p3p)+
+  theme(
+    axis.title.x = element_blank(),
+    panel.border = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.x.bottom = element_blank(),
+    # axis.text.x.bottom = element_text(angle = 0),
+    plot.title=element_text(size=14, face="bold")
+  )
+print(p3p)
+if (save == TRUE) {
+  ggsave(paste0(pathImages, "parasite_parasitehosts_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+-> look for parasite-host database: http://www.ontobee.org/
+

@@ -1,0 +1,105 @@
+
+```{r include=FALSE}
+rm(list = ls(all = TRUE))
+gc()
+setwd("~/polybox/MSc_ACLS/swissrepeat/results/")
+source("helpers.R")
+```
+
+# get overview of available data 
+
+## swissrepeat/data/
+
+```{r}
+swissprot_annotations <- load_swissprot("data/swissprot_annotations.tsv")
+str(swissprot_annotations)
+```
+
+```{r}
+pfam_annotations <- read.delim("data/pfam_annotations.tab", header = TRUE, sep='\t')
+str(pfam_annotations)
+```
+
+```{r}
+pfam_clans=read.delim("data/Pfam-A.clans.tsv", header = TRUE, sep='\t')
+str(pfam_clans)
+```
+```{r}
+scales_and_slopes <- read.delim("data/scales_and_slopes.csv", header = TRUE, sep = '\t')
+str(scales_and_slopes)
+```
+
+
+## swissrepeat/results
+```{r}
+aa_freqs <- read.csv("results/aa_freqs.csv", header = TRUE)
+str(aa_freqs)
+```
+
+```{r}
+virus_host_pairs_host_taxname_in_sp <- read.csv("results/virus_host_pairs_host_taxname_in_sp.csv", header = TRUE)
+str(virus_host_pairs_host_taxname_in_sp)
+```
+
+### swissrepeat/results/amino_acid_frequencies
+```{r}
+Archea <- read.csv("results/amino_acid_frequencies/Archaea.csv", header = T)
+str(Archea)
+head(Archea)
+```
+
+```{r}
+summary_aa_freqs <- read.csv("results/amino_acid_frequencies/summary.csv", header = T)
+str(summary_aa_freqs)
+head(summary_aa_freqs)
+```
+
+#### swissrepeat/results/amino_acid_frequencies/mobidb_consensus
+```{r}
+Archea_mobidb_consensus <- read.csv("results/amino_acid_frequencies/mobidb_consensus/Archaea.csv", header = T)
+str(Archea_mobidb_consensus)
+```
+
+#### swissrepeat/results/amino_acid_frequencies/mobidb_consensus_inverse
+```{r}
+Archea_mobidb_consensus_inverse <- read.csv("results/amino_acid_frequencies/mobidb_consensus_inverse/Archaea.csv", header = T)
+str(Archea_mobidb_consensus_inverse)
+```
+
+#### swissrepeat/results/amino_acid_frequencies/mobidb_regions_inverse
+```{r}
+Archea_mobidb_regions_inverted <- read.csv("results/amino_acid_frequencies/mobidb_regions_inverted/Archaea.csv", header = T)
+str(Archea_mobidb_regions_inverted)
+```
+
+### swissrepeat/results/disorder_annotations
+```{r}
+disorder_annotations_mobidb_annotations <- read.csv("results/disorder_annotations/mobidb_annotations.csv", header = T)
+str(disorder_annotations_mobidb_annotations)
+```
+
+```{r}
+disorder_annotations_mobidb_coordinates <- read.csv("results/disorder_annotations/mobidb_coordinates.csv", header = T)
+str(disorder_annotations_mobidb_coordinates)
+```
+
+```{r}
+disorder_annotations_mobidb_regions <- read.csv("results/disorder_annotations/mobidb_regions.csv", header = T)
+str(disorder_annotations_mobidb_regions)
+```
+
+### swissrepeat/results/empirical_an_expected_homorepeat_counts
+emtpy subdirectories...
+
+### swissrepeat/results/tr_annotions
+```{r}
+tr_annotations <- read.csv("results/tr_annotations/tr_annotations.csv", header = T)
+str(tr_annotations)
+```
+
+### swissrepeat/results/tr_idr_overlap
+```{r}
+repeat_disorder_overlap_regions <- read.csv("results/tr_idr_overlap/repeat_disorder_overlap_regions.csv", header = T)
+str(repeat_disorder_overlap_regions)
+```
+
