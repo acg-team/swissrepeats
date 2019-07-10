@@ -13,6 +13,7 @@ mauscript_NAR/
 
 # html files
 .html
+*.html
 
 # History files
 .Rhistory
