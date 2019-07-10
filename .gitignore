@@ -11,6 +11,9 @@ paper/
 mauscript_NAR/
 *[Oo]verleaf*
 
+# html files
+.html
+
 # History files
 .Rhistory
 .Rapp.history
