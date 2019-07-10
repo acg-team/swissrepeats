@@ -591,22 +591,21 @@ if (save == TRUE) {
   ggsave(paste0(pathImages, "virus_virushost_archaea_bar2", figureFormat), width=12, height=8, dpi = 300)}
 ```
 ```{r correlation analysis archaea}
-# Frequency
-df_archaea_test <- df_archaea %>% 
-  select(nTR, Freq, Superkingdom) %>% 
-  arrange(Superkingdom) %>% 
-  spread(Superkingdom, Freq)
-chisq.test(df_archaea_test$`archaeal virus-host`, df_archaea_test$`archaeal viruses`)
+cor.vir.virhost <- function(df){
+  # Frequency
+  df_test <- df %>% 
+    select(nTR, Freq, Superkingdom) %>% 
+    arrange(Superkingdom) %>% 
+    spread(Superkingdom, Freq)
+  print(df_test)
 
-# Ratio
-df_archaea_test <- df_archaea %>% 
-  select(nTR, fraction_nTR, Superkingdom) %>% 
-  arrange(Superkingdom) %>% 
-  spread(Superkingdom, fraction_nTR)
-chisq.test(df_archaea_test$`archaeal virus-host`, df_archaea_test$`archaeal viruses`)
-
-cor.test(df_archaea_test$`archaeal virus-host`, df_archaea_test$`archaeal viruses`, method = "spearman")
+  ### Testing the null, that the proportion in the two groups (virus-host and viruses) are the same.
+  print(prop.test(data.matrix(df_test)[,-1]))
+}
+cor.vir.virhost(df_archaea)
 ```
+The Null-hypothesis that the proportions in the two groups are the same can be rejected in favour of the alternative hypothesis that the two groups show not equal proportions.
+
 
 ```{r plot virus-virushost (Bacteria) NEW}
 #### Virushost information (all bacteria which host a virus)
@@ -743,6 +742,11 @@ p3b
 if (save == TRUE) {
   ggsave(paste0(pathImages, "virus_virushost_bacteria_bar2", figureFormat), width=12, height=8, dpi = 300)}
 ```
+
+```{r}
+cor.vir.virhost(df_bacteria)
+```
+
 
 ```{r plot virus-virushost (Bacteria) OLD}
 # #### Virushost information
@@ -1018,6 +1022,10 @@ p3e <- beautifier(p3e)+
 p3e
 if (save == TRUE) {
   ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+```{r}
+cor.vir.virhost(df_eukaryota)
 ```
 
 
@@ -1318,6 +1326,9 @@ if (save == TRUE) {
   ggsave(paste0(pathImages, "virus_virushost_eukaryota_bar2", figureFormat), width=12, height=8, dpi = 300)}
 ```
 
+```{r}
+cor.vir.virhost(df_eukaryota)
+```
 
 
 there are many missing Species_ID i.e. the one from homo sapiens. For the ones, where we have a Species name, we can fill it in with the data from ncbi dowloaded above.
@@ -1640,6 +1651,10 @@ p3h <- beautifier(p3h)+
 p3h
 if (save == TRUE) {
   ggsave(paste0(pathImages, "virus_virushost_human_bar2", figureFormat), width=12, height=8, dpi = 300)}
+```
+
+```{r}
+cor.vir.virhost(df_human)
 ```
 
 ```{r arrange cake diagrams in one plot}
