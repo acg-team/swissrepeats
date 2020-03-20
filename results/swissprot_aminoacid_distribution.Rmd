@@ -782,4 +782,3 @@ if( save) {
 cor.test(df$aa_ratio_negsp, df$disorderpropensity, method = "spearman")
 print(paste("rho^2:", round(cor.test(df$aa_ratio_negsp, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
 ```
-
