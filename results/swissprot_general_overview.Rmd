@@ -9,7 +9,6 @@ date: "March, 2019"
 # Housekeeping
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Before executing this file, do: setwd("path/to/your/git/on/swissrepeat/results")
-setwd("/home/matteo/polybox/MSc_ACLS/swissrepeat/results")
 source("local_config.R")
 setwd(paste0(local_base_path,"/results"))
 
