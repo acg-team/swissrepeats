@@ -109,7 +109,26 @@ if( save) {
   ggsave(paste0(pathImages, "fig5a_allAA", figureFormat), width=12, height=8, dpi = 300)
 }
 
-
+# NOTE: Grouping by kingdom doesn't work. Shows always the whole dataset!
+# install.packages("gghighlight")
+# library(gghighlight)
+# p = ggplot(homo_q, aes(x=n, y=log10_count_rounded, colour=aa, group = Kingdom)) +
+#   geom_point(size=2)+  
+#   facet_wrap(~ Kingdom, scales = "fixed")+
+#     gghighlight(aa == "N" | aa == "Q" | aa == "S" | aa == "E", use_direct_label = FALSE)+
+# 
+#   ggtitle('Empirical data')+
+#   labs(x = "Repeat unit number",
+#        y = expression(log[10]~count~(rounded)))+
+#   scale_color_manual(values = morecolors2)+
+#   guides(colour=guide_legend(override.aes = list(size = 3)),
+#          size=FALSE)
+# p = beautifier(p, x.axis.text.angle = 0)
+# p <- paper.figure(p, x.axis.text.angle = 0)
+# p
+# if( save) {
+#   ggsave(paste0(pathImages, "fig5a_allAA_highlighted", figureFormat), width=12, height=8, dpi = 300)
+# }
 
 # For a subset of AAs
 homo_q = subset(homo_all, aa %in% c("N", "Q", "S", "E") & type == "empirical")
@@ -195,10 +214,10 @@ show_empirical_homorepeat_counts_relative_to_total_seq_length <- function(data, 
 }
 
 p = show_empirical_homorepeat_counts_relative_to_total_seq_length(homo, "Eukaryota", 0, 50, cols1)
+p
 if( save) {
   ggsave(paste0(pathImages, "fig5c", figureFormat), width=12, height=8, dpi = 300)
 }
-p
 ```
 Fig. 5c). Empirical count of homorepeats in Swiss-Prot Eukaryotes ($n <= 50$) for ordered and disordered regions (consensus MobiDB annotations, no minimum length cut-off.). Amino acids are ordered by their propensity to promote structural order.
 
