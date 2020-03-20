@@ -6,7 +6,7 @@ julia_virus-virushost/
 meeting_notes/
 pandoc-bootstrap-template-master/
 paper/
-data/
+#data/
 manuscript_NAR/
 manuscript_bioArvix/
 manuscript_protein_function_and_bioinformatics/
