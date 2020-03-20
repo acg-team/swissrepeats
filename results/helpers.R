@@ -40,10 +40,12 @@ require("reshape2")
 source("local_config.R")
 
 # Set colors
-cols1.4 <- c("#2D882D", "#AA3939", "#AA7939", "#29506D")
+cols1.4 <- c("#2D882D", "#AA3939", "#AA7939", "#29506D", "#5C7881")
+cols1.4.bright <- c("#87CC87", "#FFAAAA", "#FFDAAA", "#708DA4", "#B2BEC1")
 cols2.4 <- c("#2D882D", "#AA3939", "#AA7939", "#29506D")
 
 cols1 <- c("#AA3939", "#AA7939", "#29506D", "#2D882D")  #http://paletton.com/#uid=7000I0kllllaFw0g0qFqFg0w0aF
+cols1.bright <- c("#FFAAAA", "#FFD0AA", "#669999", "#88CC88")
 cols2 <- c("#FFAAAA", "#FFDBAA", "#718EA4", "#88CC88") 
 cols3 <- c("#801515", "#805215", "#123652", "#116611")
 cols4 <- c("#550000", "#553100", "#042037", "#004400")
