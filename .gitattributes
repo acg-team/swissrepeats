@@ -16,6 +16,5 @@ data/tr_all_overlap.csv filter=lfs diff=lfs merge=lfs -text
 data/tr_all_overlap_par_subset.csv filter=lfs diff=lfs merge=lfs -text
 data/categories.dmp filter=lfs diff=lfs merge=lfs -text
 data/categories_taxcat_readme.txt filter=lfs diff=lfs merge=lfs -text
-data/uniprot_sprot.dat filter=lfs diff=lfs merge=lfs -text
 data/pdb_pfam_mapping.txt filter=lfs diff=lfs merge=lfs -text
 data/pfam_annotations_with_clans.tab filter=lfs diff=lfs merge=lfs -text
