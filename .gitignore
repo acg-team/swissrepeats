@@ -2,18 +2,20 @@
 literature/
 
 # data-files
-*.dat
 julia_virus-virushost/
 meeting_notes/
 pandoc-bootstrap-template-master/
-data/
 paper/
-mauscript_NAR/
+data/
+manuscript_NAR/
+manuscript_bioArvix/
+manuscript_protein_function_and_bioinformatics/
+DRAFT_A_new*
 *[Oo]verleaf*
+*.odg
+*.swp
 
-# html files
-.html
-*.html
+
 
 # History files
 .Rhistory
