@@ -781,8 +781,5 @@ if( save) {
 ```{r correlation analysis: AA ratio in all Swissprot w/o TRs vs. disorder propensity}
 cor.test(df$aa_ratio_negsp, df$disorderpropensity, method = "spearman")
 print(paste("rho^2:", round(cor.test(df$aa_ratio_negsp, df$disorderpropensity, method = "spearman")$estimate[1]^2, 3)))
-<<<<<<< HEAD
 ```
-=======
-```
->>>>>>> 6a2ef1cde30da06bf38120820e066a7e7fe8152a
+
