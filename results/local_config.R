@@ -2,7 +2,7 @@
 #cp local_config_TEMPLATE.R local_config.R
 
 # Adapt these paths to your system:
-local_base_path = "/home/matteo/polybox/MSc_ACLS/swissrepeat"
+local_base_path = "/home/delt/ZHAW/MSc_ACLS/swissrepeats"
 
 
 # *local_path_separator* is most likely '/' on a Unix system and '\' on a Windows system.

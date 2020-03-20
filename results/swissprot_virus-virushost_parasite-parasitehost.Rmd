@@ -19,7 +19,7 @@ rm(list = ls(all = TRUE))
 gc()
 source("helpers.R")
 
-# colour setup:
+# colour setup: 
 #library(RColorBrewer); display.brewer.all() # to display available colour palettes
 colour_count = 13 # alternative: length(unique(sp_gathered$Kingdom))
 getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
@@ -57,19 +57,34 @@ tr_all_sp <- tr_all_sp %>%
   mutate(TR_id = row_number())
 ```
 
-From all Tandem Repeats, select only those which are viral (Superkingdom = Viruses) and have a known Virushost.
-```{r "subset virushost == TRUE"}
-# filter all tandem repeat containing proteins from Swissprot which have annotated virushosts
-tr_all_sp_virus <- tr_all_sp[!(tr_all_sp$virus_hosts == ""),]
-```
-
-```{r Viral Proteins in general: summary statistics}
+```{r general overview of viral proteins}
 # no. of viral proteins in Swissprot
 length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))
 nrow(sp_all[which(sp_all$Superkingdom == "Viruses"),])
 # %of viral proteins in swissprot
 length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))/ length(unique(sp_all$ID))
 
+# Protein length of viruses
+mean(sp_all$Length[which(sp_all$Superkingdom == "Viruses")])
+# Overall protein length
+mean(sp_all$Length)
+
+# Contingency table of all viral proteins (how many species have how many proteins)
+table(table(sp_all$Species[which(sp_all$Superkingdom == "Viruses")])) # 161 viruses have only 1 protein entry.
+
+# 90% of viruses have less than 32 proteins
+sum(table(table(sp_all$Species[which(sp_all$Superkingdom == "Viruses")])))*0.9
+sum(table(table(sp_all$Species[which(sp_all$Superkingdom == "Viruses")]))[1:31])
+```
+
+
+From all Tandem Repeats, select only those which are viral (Superkingdom = Viruses) and have a known Virushost.
+```{r "subset virushost == TRUE"}
+# filter all tandem repeat containing proteins from Swissprot which have annotated virushosts
+tr_all_sp_virus <- tr_all_sp[!(tr_all_sp$virus_hosts == ""),]
+```
+
+```{r Viral Proteins with TR in general: summary statistics}
 # no. of viral proteins in Swissprot containing TRs
 length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")]))
 length(unique(tr_all_sp$ID[which(tr_all_sp$Superkingdom == "Viruses")])) / length(unique(sp_all$ID[which(sp_all$Superkingdom == "Viruses")]))
@@ -81,8 +96,28 @@ nrow(tr_all_sp[which(tr_all_sp$Superkingdom == "Viruses"),])
 tr_all_sp_virus$ID <- factor(tr_all_sp_virus$ID, levels = unique(tr_all_sp_virus$ID)) # drop unused levels
 table(table(tr_all_sp_virus$ID))
 table(table(tr_all_sp_virus$ID)) / sum(table(table(tr_all_sp_virus$ID)))
+
+# Viral proteins function
+head(tr_all_sp_virus)
 ```
 Of the 16605 viral proteins in swissprot 44% contain at least one TR. Most (59%) of the viral proteins have a single TR.
+ 
+```{r viral proteins inhibiting innate immune response}
+# see http://www.jbc.org/content/282/21/15315.long
+gene_names <- c("NS3/4A", "NS1", "VP35", "V Protein", "G1", "pp65", "ppUL83", "ICP0", "E6", "E3L", "ML")
+# let's see if the gene names appear in the protein names
+tr_all_sp_virus[grepl(pattern = gene_names[1], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[2], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[3], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[4], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[5], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[6], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[7], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[8], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[9], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[10], x = tr_all_sp_virus$protein_name),]
+tr_all_sp_virus[grepl(pattern = gene_names[11], x = tr_all_sp_virus$protein_name),]
+```
 
 ```{r Viral Proteins with annotated host species: summary statistics}
 # no. of viral proteins in Swissprot with annotated virus host
@@ -355,6 +390,7 @@ table(sp_all.long$Superkingdom_virushost[which(sp_all.long$has_tr == TRUE)])[[3]
 From all viral proteins (which have a virushost), most of them have a eukaryotic virushost (25044, 92%) followed by bacterial virus host (6%) and archael (2%). Finally there were 3 Proteins from Staphylococcus phage Twort, which have itself as virushost. -> self produced viral proteins? Not reliable on host organism?
 Most of the viral proteins (10528, 72%) which can be associated with a host species, are found only in a single host species. Interestingly, some proteins can be found in up to 23 different host species. Those are capsid proteins and some replication assosiated proteins.
 43% of all viral proteins contain TRs. Of all TR containing viral proteins, 44% have a eukaryotic virushost. 
+95.1\% of viral TR-containing proteins had an eukaryotic host organism but only few had a bacterial (3\%) or  archaeal (1\%) host.
 
 # Combine Virus Protein information with Host-species Protein information
 ### Problematic:
@@ -541,7 +577,8 @@ p2a <- ggplot(data=df_archaea, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  # scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+  
   # ggtitle("Archaea")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -693,7 +730,7 @@ p2b <- ggplot(data=df_bacteria, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Bacteria")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -948,7 +985,7 @@ p1e <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
   #           color="white", size=3.5)+
   # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
   #                  segment.size = .5, direction = 'x')+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   ggtitle("Eukaryota")+
   labs(x="", y="Fraction", fill= "TR count")+
   theme_minimal()
@@ -972,7 +1009,7 @@ p2e <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + #
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Eukaryota")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -1130,7 +1167,7 @@ p <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # T
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Eukaryota")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -1272,7 +1309,7 @@ pe <- ggplot(data=df_eukaryota, aes(x=factor(1), y=fraction_nTR, fill=nTR)) +
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Eukaryota")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -1458,7 +1495,7 @@ p2h <- ggplot(data=df_human, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TOD
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Homo sapiens")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -1602,7 +1639,7 @@ p2h <- ggplot(data=df_human, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # TOD
   facet_grid(~Superkingdom)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Homo sapiens")+
   labs(fill= "TR count")+
   theme_minimal()
@@ -1769,7 +1806,7 @@ p1p <- ggplot(data=df_parasite, aes(x=factor(1), y=df_parasite$fraction_nTR, fil
   # geom_label_repel(aes(label = nTR), size=4, show.legend = F, nudge_x = 1,
   #                  segment.size = .5, direction = 'x')+
   # geom_text(data = ann_text, label=paste0(as.numeric(as.character(ann_text$fraction_nTR))*100,"%"))+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   ggtitle("Homo sapiens")+
   labs(x="", y="Fraction", fill= "TR count")+
   theme_minimal()
@@ -1793,7 +1830,7 @@ p2p <- ggplot(data=df_parasite, aes(x=factor(1), y=fraction_nTR, fill=nTR)) + # 
   facet_grid(~organism)+
   # geom_text(aes(y=fraction_nTR, label=nTR), vjust=1.6,
   #           color="white", size=3.5)+
-  scale_fill_manual(values = c(cols1.4, "#5C7881"))+
+  scale_fill_manual(values = cols1.4.bright)+
   # ggtitle("Homo sapiens")+
   labs(fill= "TR count")+
   theme_minimal()

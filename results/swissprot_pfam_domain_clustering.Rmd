@@ -26,8 +26,9 @@ getPalette = colorRampPalette(brewer.pal(9, "Dark2"))
 # library(viridis)
 # viridiscols <- viridis_pal(option = "D")(length(unique(df_spec$PFAM_desc)))  # n = number of colors seeked
 
+require(plotly)
 require(htmlwidgets)
-
+require(compare)
 ```
 
 ```{r Script specific functions}
@@ -938,6 +939,14 @@ df_spec <- df_spec %>%
   group_by(Superkingdom) %>%
   mutate(rank = base::rank(count))
 
+# Compare the two groups:
+comp <- compare(df_spec$PFAM_desc[which(df_spec$Superkingdom == "Eukaryota")], df_spec$PFAM_desc[which(df_spec$Superkingdom == "Prokaryota")], allowAll = T)
+comp$tM # those PFAMs appear in both Superkingdoms
+length(comp$tM) # Number of shared PFAMs. Remove TOP from calculation above to get it not only for the top 10 but for all of them.
+
+length(df_spec$PFAM_desc[which(df_spec$Superkingdom == "Eukaryota")])
+length(df_spec$PFAM_desc[which(df_spec$Superkingdom == "Prokaryota")])
+
 ## make plot
 pd <- position_dodge(0.4)
 # p <- ggplot(df_spec, aes(x = Superkingdom, y = rel_freq, color = PFAM_desc))+
@@ -1304,10 +1313,6 @@ d_superkingdom[grepl(d_superkingdom$PFAM_desc, pattern = "^WD"),]
 
 since overall plot is a bit messy, let's try with plotly:
 ```{r plotly overall plot}
-# install.packages("plotly")
-require(plotly)
-require(htmlwidgets)
-
 df_spec$textlabel <- paste("PFAM-Name: ", df_spec$PFAM_Name, "\n",
                            "PFAM-Desc.: ", df_spec$PFAM_desc, "\n",
                            "PFAM-Acce.: ", df_spec$model)
