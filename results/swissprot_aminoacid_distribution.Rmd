@@ -177,7 +177,7 @@ p <- ggplot(df, aes(x= aa_freq_sp, y = aa_freq_tr, size = disorderpropensity))+
   geom_point()+
   labs(x= "AA Background Frequency",
        y = "AA Frequency in TRs")+
-  guides(size=guide_legend(title="Disorderpropensity"))+
+  guides(size=guide_legend(title="Disorder Propensity"))+
   theme_minimal()
 p <- beautifier(p, x.axis.text.angle = 0)
 p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
@@ -199,9 +199,9 @@ p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, color = disorderpropensity)
                   color = "black") +
   labs(x= "AA ratio overall",
        y = "AA ratio in TRs")+
-  guides(size=guide_legend(title="Disorderpropensity"))+
+  guides(size=guide_legend(title="Disorder Propensity"))+
   scale_color_continuous(low = "#F9C73F", high = "#A21212", 
-                         name = "Disorderpropensity")+
+                         name = "Disorder Propensity")+
   theme_minimal()
 p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 1.1)
 p <- paper.figure(p, x.axis.text.angle = 0, x.axis.text.hjust = 0.5)
@@ -219,13 +219,13 @@ p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, color = disorderpropensity)
        y = "AA ratio in TRs")+
   guides(size=guide_legend(title="Disorderpropensity"))+
   scale_color_continuous(low = "#F9C73F", high = "#A21212", 
-                         name = "Disorderpropensity")+
+                         name = "Disorder Propensity")+
   theme_minimal()
 p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 1.1)+
   theme(legend.position="bottom", legend.box = "horizontal")
 plot_gg(p, width = 5, height = 4, scale = 300, multicore = TRUE, windowsize = c(1000,800))
 render_camera(theta = 320, phi = 65)
-text(list(x=df$aa_ratio_sp, y=df$aa_ratio_tr, z=df$disorderpropensity), labels = df$aa)
+# text(list(x=df$aa_ratio_sp, y=df$aa_ratio_tr, z=df$disorderpropensity), labels = df$aa)
 text3d(x = 0.05, y=-0.01, z = 0, texts = "test")
 render_snapshot(paste0(pathImages, "AA_ratio_TR_vs_background_3D", figureFormat))
 
@@ -243,9 +243,9 @@ p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, z= disorderpropensity, colo
                   color = "black") +
   labs(x= "AA ratio overall",
        y = "AA ratio in TRs")+
-  guides(size=guide_legend(title="Disorderpropensity"))+
+  guides(size=guide_legend(title="Disorder Propensity"))+
   scale_color_continuous(low = "#F9C73F", high = "#A21212", 
-                         name = "Disorderpropensity")+
+                         name = "Disorder Propensity")+
   theme_minimal()
 p <- beautifier(p, x.axis.text.angle = 0, x.axis.text.hjust = 1.1)+
   theme(legend.position="bottom", legend.box = "horizontal")
@@ -259,7 +259,7 @@ p <- ggplot(df, aes(x= aa_ratio_sp, y = aa_ratio_tr, size = disorderpropensity, 
   geom_text(aes(label = aa, size = disorderpropensity*0.25), color = "white")+
   labs(x= "AA ratio overall",
        y = "AA ratio in TRs")+
-  guides(size=guide_legend(title="Disorderpropensity"))
+  guides(size=guide_legend(title="Disorder Propensity"))
 p <- beautifier(p)+
   theme(axis.text.x = element_text(angle = 0, hjust = 1.1))
 p <- beautifier(p, x.axis.text.angle = 0)
