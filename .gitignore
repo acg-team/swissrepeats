@@ -1,3 +1,6 @@
+# ignore personal files
+results/local_config.R
+
 # ignore all changes in literature
 literature/
 
