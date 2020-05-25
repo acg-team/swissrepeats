@@ -564,8 +564,80 @@ distinct_region = ddply(tr_all_sp, .(Superkingdom),
 print(distinct_region)
 ```
 
+pick proteins with >= unique TR regions
+```{r }
+require(data.table)
+# count how many TR per protein
+many_unique = setDT(tr_all_sp)[,.N, by=ID]
+print(many_unique[order(N, decreasing = T)])
+
+# Left join to sp_all to add superkingdom information
+sp_all_many_distinct <- merge(sp_all, many_unique, by = "ID")
+print(sp_all_many_distinct[order(sp_all_many_distinct$N, decreasing = T), c(1,24)])
+
+# eventually select only those with a certain amount of distinct TRs
+df <- sp_all_many_distinct[which(sp_all_many_distinct$N >0),]
+df <- df[order(df$Superkingdom),]
+p <- ggplot(data = df, aes(x=df$ID, y=df$N, fill=df$Superkingdom))+
+  geom_col()+
+  scale_color_manual(values= cols1)+
+  ggtitle('Number of distinct TR per Protein coloured by Superkingdom')+
+  theme(text = element_text(),
+        legend.position = "bottom",
+        strip.text.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x="Proteins", 
+       y="Number of distinct TR")+ 
+  scale_fill_discrete(name=expression("Superkingdom")) +
+  guides(colour=guide_legend(override.aes = list(size = 1.5)),
+         size=FALSE)
+p = beautifier(p)+
+  guides(colour=guide_legend(override.aes = list(size = 1.5)),
+         size=FALSE)
+p <- paper.figure(p)+
+  guides(colour=guide_legend(override.aes = list(size = 1.5)),
+         size=FALSE)+
+  theme(legend.position = "bottom", legend.box = "vertical",
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank())
+p
+if( save) {
+  ggsave(paste0(pathImages, "distinct_TR_per_prot_by_superkingdom", figureFormat), width=12, height=8, dpi = 300)
+}
+```
+It can be seen, that Eukaryotes have often different TRs per protein with some outliers. 
+
+```{r}
+sp_all_many_distinct[which(sp_all_many_distinct$N >100),]
+```
+The two big peaks in the graph above are Mucin Proteins.
+
+```{r}
+sp_all_many_distinct[which(sp_all_many_distinct$N >50),]
+```
+Other proteins with many distinct TRs belong to structural and LRR-containing repeats.
+
+If we look at the bacterial proteins
+```{r}
+sp_all_many_distinct[which(sp_all_many_distinct$Superkingdom == "Bacteria" & sp_all_many_distinct$N >25),]
+```
+we find many distinct TRs in pathogenesis associated proteins which are responsible for bacterial binding to platelets (Serine-rich adhesin for platelets) and to fibronectin (Extracellular matrix-binding protein ebh).
+
+
+```{r}
+sp_all_many_distinct[which(sp_all_many_distinct$Superkingdom == "Viruses" & sp_all_many_distinct$N >15),]
+```
+Viral proteins show many distinct TRs in nuclear antigen, transcription factor and structural proteins.
+
+```{r}
+sp_all_many_distinct[which(sp_all_many_distinct$Superkingdom == "Archaea" & sp_all_many_distinct$N >7),]
+```
+Archae show many distinct TRs in DNA break repair proteins and mucin.
+
+
 ## Sequence length in bins vs. fraction of TRs (Fig2a-2 (cnf. Fig 1b Marcotte et al.)
-Show how sequence length and presence of TRs correlate.
+Show how sequence length and presence of TRs correlate.^
 ```{r, echo=TRUE}
 sequence_length_bin <- with(sp_all, cut(Length, breaks = c(0, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1250, 1500, 2000, 50000), dig.lab=12))
 sp <- ddply(sp_all, .(Superkingdom, sequence_length_bin), 
